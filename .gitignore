@@ -1,0 +1,4 @@
+.tools/
+coverage.out
+mutation-results.json
+mutation-dry-run.json
