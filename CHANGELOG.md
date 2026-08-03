@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Delegate local mutation checks to the canonical exact-100 repository runner
+  instead of broad package exclusions and a reduced efficacy threshold.
+
 ### Fixed
 
 - Make native Valkey subscription coverage deterministic across CI runners.
