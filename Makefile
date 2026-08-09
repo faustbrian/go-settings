@@ -36,7 +36,7 @@ mutation:
 integration:
 	test -n "$(POSTGRES_URL)"
 	test -n "$(VALKEY_ADDR)"
-	$(GO) test -race ./postgres ./valkey -count=1 -v
+	$(GO) test -race . ./postgres ./valkey -count=1 -v
 examples:
 	$(GO) test . -run '^Example' -count=1
 docs:
@@ -44,7 +44,7 @@ docs:
 workflows:
 	$(ACTIONLINT) .github/workflows/*.yml
 benchmark:
-	$(GO) test ./memory ./valkey -run '^$$' -bench=. -benchmem \
+	$(GO) test . ./memory ./valkey -run '^$$' -bench=. -benchmem \
 		-benchtime="$(BENCH_TIME)"
 check: tidy-check format-check vet test race coverage fuzz examples docs \
 	staticcheck lint vuln benchmark workflows

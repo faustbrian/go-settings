@@ -29,12 +29,14 @@ backend dependencies by importing `postgres` or `valkey`.
 - [Provider setup](docs/providers.md)
 - [PostgreSQL schema management](docs/schema-management.md)
 - [Caching semantics](docs/caching.md)
+- [Runtime fleet resilience](docs/fleet-resilience.md)
 - [Migration guidance](docs/migrations.md)
 - [Secret handling](docs/secrets.md)
 - [Operations](docs/operations.md)
 - [Adoption guide](docs/adoption.md)
 - [FAQ](docs/faq.md)
 - [Testing and local commands](docs/testing.md)
+- [Benchmark baseline](docs/benchmarks.md)
 
 Requires Go 1.26+, PostgreSQL 16 or 17 for durability, and Valkey 9 when
 caching is enabled. Licensed under the [MIT License](LICENSE).

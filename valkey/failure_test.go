@@ -95,7 +95,7 @@ func TestCacheMalformedRecordContractsAndTransportWatcherError(t *testing.T) {
 		{Scope: settings.Global(), Key: key.StableID(), State: settings.StateValue,
 			Data: []byte("value"), CodecID: "string", CodecVersion: 1},
 		{Scope: settings.Global(), Key: key.StableID(), State: settings.StateMissing,
-			CodecID: "string", CodecVersion: 1, Version: 1},
+			Data: []byte("unexpected"), CodecID: "string", CodecVersion: 1, Version: 1},
 		{Scope: settings.Global(), Key: key.StableID(), State: settings.StateValue,
 			Data: make([]byte, 1<<20+1), CodecID: "string", CodecVersion: 1, Version: 1},
 	}

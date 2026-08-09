@@ -17,7 +17,7 @@ import (
 // Transport is the small Valkey contract needed by Cache.
 type Transport interface {
 	Get(context.Context, string) ([]byte, bool, error)
-	Set(context.Context, string, []byte, time.Duration) error
+	SetIfNewer(context.Context, string, []byte, time.Duration, uint64) error
 	Delete(context.Context, string) error
 	Publish(context.Context, string, []byte) error
 	Subscribe(context.Context, string) (<-chan []byte, <-chan error)
@@ -48,13 +48,8 @@ type Config struct {
 	OutagePolicy OutagePolicy
 }
 
-// Event is an at-most-once invalidation notification. Watch may coalesce
-// events when its bounded consumer channel is full.
-type Event struct {
-	Scope   settings.Scope `json:"scope"`
-	Key     string         `json:"key"`
-	Version uint64         `json:"version"`
-}
+// Event is the shared versioned invalidation hint.
+type Event = settings.Invalidation
 
 // CacheError reports a cache-side failure and whether the durable mutation
 // already committed.
@@ -104,13 +99,15 @@ func (cache *Cache) Capabilities() settings.Capabilities {
 func (cache *Cache) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
 	if cache.config.ReadPolicy == BoundedStale {
 		data, ok, err := cache.transport.Get(ctx, cache.key(scope, key))
-		if err == nil && ok {
-			record, decodeErr := decodeRecord(data, scope, key)
-			if decodeErr == nil {
-				return record, record.State != settings.StateMissing, nil
+		if err == nil {
+			if ok {
+				record, decodeErr := decodeRecord(data, scope, key)
+				if decodeErr == nil {
+					return record, record.State != settings.StateMissing, nil
+				}
+				_ = cache.transport.Delete(ctx, cache.key(scope, key))
 			}
-			_ = cache.transport.Delete(ctx, cache.key(scope, key))
-		} else if err != nil && cache.config.OutagePolicy == FailClosed {
+		} else if cache.config.OutagePolicy == FailClosed {
 			return settings.Record{}, false, &CacheError{Operation: "get", Err: err}
 		}
 	}
@@ -119,8 +116,10 @@ func (cache *Cache) Get(ctx context.Context, scope settings.Scope, key string) (
 		return settings.Record{}, false, err
 	}
 	if ok {
-		if cacheErr := cache.store(ctx, record); cacheErr != nil && cache.config.OutagePolicy == FailClosed {
-			return settings.Record{}, false, cacheErr
+		if cacheErr := cache.store(ctx, record); cacheErr != nil {
+			if cache.config.OutagePolicy == FailClosed {
+				return settings.Record{}, false, cacheErr
+			}
 		}
 	}
 	return record, ok, nil
@@ -134,8 +133,10 @@ func (cache *Cache) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 		return nil, err
 	}
 	for _, record := range records {
-		if cacheErr := cache.store(ctx, record); cacheErr != nil && cache.config.OutagePolicy == FailClosed {
-			return nil, cacheErr
+		if cacheErr := cache.store(ctx, record); cacheErr != nil {
+			if cache.config.OutagePolicy == FailClosed {
+				return nil, cacheErr
+			}
 		}
 	}
 	return records, nil
@@ -166,16 +167,14 @@ func (cache *Cache) BulkApply(ctx context.Context, mutations []settings.Mutation
 }
 
 func (cache *Cache) afterWrite(ctx context.Context, record settings.Record) error {
-	var err error
-	if record.State == settings.StateMissing {
-		err = cache.transport.Delete(ctx, cache.key(record.Scope, record.Key))
-	} else {
-		err = cache.store(ctx, record)
-	}
+	err := cache.store(ctx, record)
 	if err != nil && cache.config.OutagePolicy == FailClosed {
 		return &CacheError{Operation: "read-after-write", Committed: true, Err: err}
 	}
-	event, _ := json.Marshal(Event{Scope: record.Scope, Key: record.Key, Version: record.Version})
+	event, _ := json.Marshal(Event{
+		ProtocolVersion: settings.InvalidationProtocolVersion,
+		Scope:           record.Scope, Key: record.Key, Version: record.Version, State: record.State,
+	})
 	if publishErr := cache.transport.Publish(ctx, cache.channel, event); publishErr != nil &&
 		cache.config.OutagePolicy == FailClosed {
 		return &CacheError{Operation: "publish invalidation", Committed: true, Err: publishErr}
@@ -185,7 +184,7 @@ func (cache *Cache) afterWrite(ctx context.Context, record settings.Record) erro
 
 func (cache *Cache) store(ctx context.Context, record settings.Record) error {
 	data, _ := json.Marshal(record)
-	if err := cache.transport.Set(ctx, cache.key(record.Scope, record.Key), data, cache.config.TTL); err != nil {
+	if err := cache.transport.SetIfNewer(ctx, cache.key(record.Scope, record.Key), data, cache.config.TTL, record.Version); err != nil {
 		return &CacheError{Operation: "set", Err: err}
 	}
 	return nil
@@ -199,9 +198,22 @@ func decodeRecord(data []byte, scope settings.Scope, key string) (settings.Recor
 	if err := json.Unmarshal(data, &record); err != nil {
 		return settings.Record{}, fmt.Errorf("decode cached record: %w", err)
 	}
-	if record.Scope != scope || record.Key != key || record.Version == 0 ||
-		(record.State != settings.StateValue && record.State != settings.StateCleared) ||
-		len(record.Data) > 1<<20 {
+	if record.Scope != scope {
+		return settings.Record{}, errors.New("cached record contract mismatch")
+	}
+	if record.Key != key {
+		return settings.Record{}, errors.New("cached record contract mismatch")
+	}
+	if record.Version == 0 {
+		return settings.Record{}, errors.New("cached record contract mismatch")
+	}
+	if record.State != settings.StateMissing && record.State != settings.StateValue && record.State != settings.StateCleared {
+		return settings.Record{}, errors.New("cached record contract mismatch")
+	}
+	if len(record.Data) > 1<<20 {
+		return settings.Record{}, errors.New("cached record contract mismatch")
+	}
+	if record.State != settings.StateValue && len(record.Data) != 0 {
 		return settings.Record{}, errors.New("cached record contract mismatch")
 	}
 	return record, nil
@@ -219,7 +231,10 @@ func (cache *Cache) History(ctx context.Context, query settings.HistoryQuery) ([
 // Watch subscribes to bounded, cancellable, at-most-once invalidations. When
 // the buffer is full, the oldest queued event is replaced by the newest.
 func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan error, error) {
-	if buffer < 1 || buffer > 10_000 {
+	if buffer < 1 {
+		return nil, nil, fmt.Errorf("settings valkey: watcher buffer must be between 1 and 10000")
+	}
+	if buffer > 10_000 {
 		return nil, nil, fmt.Errorf("settings valkey: watcher buffer must be between 1 and 10000")
 	}
 	messages, transportErrors := cache.transport.Subscribe(ctx, cache.channel)
@@ -233,7 +248,10 @@ func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan
 			case <-ctx.Done():
 				return
 			case err, ok := <-transportErrors:
-				if ok && err != nil {
+				if ok {
+					if err == nil {
+						return
+					}
 					select {
 					case errorsOut <- err:
 					default:
@@ -250,18 +268,18 @@ func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan
 					case errorsOut <- fmt.Errorf("settings valkey decode invalidation: %w", err):
 					default:
 					}
-					continue
-				}
-				select {
-				case events <- event:
-				default:
-					select {
-					case <-events:
-					default:
-					}
+				} else {
 					select {
 					case events <- event:
 					default:
+						select {
+						case <-events:
+						default:
+						}
+						select {
+						case events <- event:
+						default:
+						}
 					}
 				}
 			}

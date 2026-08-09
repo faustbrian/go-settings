@@ -29,17 +29,27 @@ type Key[T any] struct {
 	documentation string
 	displayName   string
 	sensitive     bool
+	class         SettingClass
 	defaultValue  T
 	hasDefault    bool
 	validate      func(T) error
 }
+
+// SettingClass selects freshness and failure policy for a definition.
+type SettingClass uint8
+
+const (
+	ClassStandard SettingClass = iota + 1
+	ClassSecret
+	ClassSecuritySensitive
+)
 
 // KeyOption customizes a typed key definition.
 type KeyOption[T any] func(*Key[T])
 
 // NewKey defines a key. Namespace and name together form its stable ID.
 func NewKey[T any](namespace, name string, codec Codec[T], options ...KeyOption[T]) Key[T] {
-	key := Key[T]{namespace: namespace, name: name, codec: codec}
+	key := Key[T]{namespace: namespace, name: name, codec: codec, class: ClassStandard}
 	for _, option := range options {
 		option(&key)
 	}
@@ -73,7 +83,21 @@ func WithValidation[T any](validate func(T) error) KeyOption[T] {
 
 // WithSensitive marks persisted and audit values as secret-bearing.
 func WithSensitive[T any]() KeyOption[T] {
-	return func(key *Key[T]) { key.sensitive = true }
+	return func(key *Key[T]) {
+		key.sensitive = true
+		key.class = ClassSecret
+	}
+}
+
+// WithClass assigns a definition to an explicit fleet failure-policy class.
+// Secret and security-sensitive classes are always redacted.
+func WithClass[T any](class SettingClass) KeyOption[T] {
+	return func(key *Key[T]) {
+		key.class = class
+		if class == ClassSecret || class == ClassSecuritySensitive {
+			key.sensitive = true
+		}
+	}
 }
 
 func (key Key[T]) StableID() string  { return key.namespace + "/" + key.name }
@@ -94,6 +118,17 @@ func (key Key[T]) CodecVersion() uint32 {
 func (key Key[T]) Documentation() string { return key.documentation }
 func (key Key[T]) DisplayName() string   { return key.displayName }
 func (key Key[T]) Sensitive() bool       { return key.sensitive }
+func (key Key[T]) Class() SettingClass   { return key.class }
+
+// ClassOf returns a definition's fleet policy class. Definitions compiled
+// against the older metadata contract remain standard during mixed rollouts.
+func ClassOf(definition Definition) SettingClass {
+	classified, ok := definition.(interface{ Class() SettingClass })
+	if !ok {
+		return ClassStandard
+	}
+	return classified.Class()
+}
 
 // ValidateDefinition verifies stable identity, codec metadata, validation,
 // and defaults before a definition enters a registry or write operation.
@@ -103,6 +138,9 @@ func (key Key[T]) ValidateDefinition() error {
 		strings.ContainsRune(key.namespace, '/') || key.codec == nil || key.CodecID() == "" ||
 		key.CodecVersion() == 0 {
 		return fmt.Errorf("%w: key metadata", ErrInvalidDefinition)
+	}
+	if key.class != ClassStandard && key.class != ClassSecret && key.class != ClassSecuritySensitive {
+		return fmt.Errorf("%w: setting class", ErrInvalidDefinition)
 	}
 	if key.hasDefault {
 		if err := key.validateValue(key.defaultValue); err != nil {

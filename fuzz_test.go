@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	settings "github.com/faustbrian/golib/pkg/settings"
 	"github.com/faustbrian/golib/pkg/settings/memory"
@@ -72,5 +73,45 @@ func FuzzResolutionOfMalformedStoredValues(f *testing.F) {
 			return
 		}
 		_, _ = settings.Resolve(context.Background(), provider, key, settings.Chain(settings.Global()))
+	})
+}
+
+func FuzzRestoreSnapshotFailsClosed(f *testing.F) {
+	key := settings.NewKey("fuzz", "snapshot", settings.StringCodec{})
+	durable := memory.New()
+	if _, err := settings.Set(context.Background(), durable, settings.Global(), key, "valid", settings.Change{
+		Actor: "fuzz", Reason: "snapshot seed", At: time.Unix(1_800_000_000, 0).UTC(),
+	}); err != nil {
+		f.Fatal(err)
+	}
+	snapshot, err := settings.CaptureWithOptions(context.Background(), durable,
+		settings.Chain(settings.Global()), settings.CaptureOptions{
+			CapturedAt: time.Unix(1_800_000_001, 0).UTC(), Provenance: settings.ProvenancePostgreSQL,
+		}, key)
+	if err != nil {
+		f.Fatal(err)
+	}
+	valid, err := snapshot.MarshalBinary()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(valid)
+	f.Add([]byte(`{"schema":1}`))
+	f.Add([]byte(`{"schema":1,"unknown":true}`))
+	f.Add([]byte("{"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 2<<20 {
+			t.Skip()
+		}
+		restored, restoreErr := settings.RestoreSnapshot(data, settings.Chain(settings.Global()), key)
+		if restoreErr != nil {
+			return
+		}
+		metadata := restored.Metadata(time.Unix(1_800_000_002, 0).UTC())
+		result, resolveErr := settings.ResolveSnapshot(restored, key, settings.Chain(settings.Global()))
+		if metadata.Revision == "" || metadata.Origin == settings.ProvenanceSnapshotCache ||
+			resolveErr != nil || result.Value != "valid" {
+			t.Fatalf("accepted malformed snapshot: metadata=%+v result=%+v err=%v", metadata, result, resolveErr)
+		}
 	})
 }

@@ -2,8 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- Add a bounded fleet runtime with immutable last-known-good snapshots,
+  per-class degradation policies, durable write fencing, invalidation-driven
+  convergence, periodic repair, cached cold start, readiness, and graceful
+  shutdown semantics.
+- Add Kubernetes fleet simulation, hostile snapshot fuzzing, real PostgreSQL
+  and Valkey fleet integration, and runtime read and refresh benchmarks.
+
 ### Changed
 
+- Make Valkey cache replacement version-conditional and preserve versioned
+  tombstones so delayed fills cannot regress values or resurrect inherited
+  settings.
+- Bind runtime reads and defaults to registered definition metadata so callers
+  cannot weaken a setting class or substitute fallback values.
 - Delegate local mutation checks to the canonical exact-100 repository runner
   instead of broad package exclusions and a reduced efficacy threshold.
 

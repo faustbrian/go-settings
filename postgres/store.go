@@ -55,10 +55,10 @@ func (*Store) Capabilities() settings.Capabilities {
 }
 
 func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
-	return get(ctx, store.db, scope, key, false)
+	return get(ctx, store.db, scope, key, false, false)
 }
 
-func get(ctx context.Context, db querier, scope settings.Scope, key string, lock bool) (settings.Record, bool, error) {
+func get(ctx context.Context, db querier, scope settings.Scope, key string, lock, includeMissing bool) (settings.Record, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return settings.Record{}, false, err
 	}
@@ -81,7 +81,7 @@ WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3`
 	if err != nil {
 		return settings.Record{}, false, fmt.Errorf("settings postgres get: %w", err)
 	}
-	if record.State == settings.StateMissing {
+	if record.State == settings.StateMissing && !includeMissing {
 		return settings.Record{}, false, nil
 	}
 	return record, true, nil
@@ -96,7 +96,7 @@ func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	records := make([]settings.Record, 0, len(scopes)*len(keys))
 	for _, scope := range scopes {
 		for _, key := range keys {
-			record, ok, getErr := get(ctx, tx, scope, key, false)
+			record, ok, getErr := get(ctx, tx, scope, key, false, true)
 			if getErr != nil {
 				return nil, getErr
 			}
@@ -120,7 +120,10 @@ func (store *Store) Apply(ctx context.Context, mutation settings.Mutation) (sett
 }
 
 func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
-	if len(mutations) == 0 || len(mutations) > 1000 {
+	if len(mutations) == 0 {
+		return nil, fmt.Errorf("%w: bulk size", settings.ErrInvalidMutation)
+	}
+	if len(mutations) > 1000 {
 		return nil, fmt.Errorf("%w: bulk size", settings.ErrInvalidMutation)
 	}
 	type coordinate struct{ scope, key string }
@@ -155,7 +158,7 @@ func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation
 }
 
 func apply(ctx context.Context, tx pgx.Tx, mutation settings.Mutation) (settings.Record, error) {
-	before, present, err := get(ctx, tx, mutation.Scope, mutation.Key, true)
+	before, present, err := get(ctx, tx, mutation.Scope, mutation.Key, true, false)
 	if err != nil {
 		return settings.Record{}, err
 	}
@@ -242,7 +245,10 @@ func (store *Store) History(ctx context.Context, query settings.HistoryQuery) ([
 	if err := query.Scope.Validate(); err != nil {
 		return nil, err
 	}
-	if query.Limit <= 0 || query.Limit > 1000 {
+	if query.Limit <= 0 {
+		return nil, fmt.Errorf("settings: history limit must be between 1 and 1000")
+	}
+	if query.Limit > 1000 {
 		return nil, fmt.Errorf("settings: history limit must be between 1 and 1000")
 	}
 	rows, err := store.db.Query(ctx, `SELECT scope_kind,scope_id,key_id,action,version,

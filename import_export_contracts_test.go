@@ -15,6 +15,7 @@ type providerOverride struct {
 	bulkGetErr   error
 	bulkApplyErr error
 	atomic       *bool
+	acceptBulk   bool
 }
 
 func (provider providerOverride) Capabilities() settings.Capabilities {
@@ -33,6 +34,17 @@ func (provider providerOverride) BulkGet(context.Context, []settings.Scope, []st
 func (provider providerOverride) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
 	if provider.bulkApplyErr != nil {
 		return nil, provider.bulkApplyErr
+	}
+	if provider.acceptBulk {
+		records := make([]settings.Record, len(mutations))
+		for index, mutation := range mutations {
+			records[index] = settings.Record{
+				Scope: mutation.Scope, Key: mutation.Key, State: settings.StateValue,
+				Data: mutation.Data, CodecID: mutation.CodecID, CodecVersion: mutation.CodecVersion,
+				Version: 1,
+			}
+		}
+		return records, nil
 	}
 	return provider.Provider.BulkApply(ctx, mutations)
 }

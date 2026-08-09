@@ -13,6 +13,14 @@ decimals, strings, durations, times, typed enums, string lists, and JSON.
 precedence. `Resolve` returns a typed value, status, owner, version, and path.
 `Capture` and `ResolveSnapshot` provide immutable reads.
 
+`Runtime` validates and atomically serves one process-local last-known-good
+snapshot. `NewRuntime` requires a snapshot-capable provider, explicit bounded
+policies for every `SettingClass`, and a bounded refresh. `Start`, `Ready`,
+`Refresh`, `ResolveCurrent`, `Apply`, and `Close` expose lifecycle, freshness,
+same-pod read-after-write, and shutdown behavior. `SnapshotStore` supplies an
+optional caller-encrypted cold-start cache; `InvalidationSource` supplies
+data-free convergence hints. See [fleet resilience](fleet-resilience.md).
+
 `Set`, `Clear`, and `Inherit` are distinct. Compare-and-set variants fence
 concurrent changes. `PrepareSet` creates typed heterogeneous mutations for
 `Bulk`. Every write requires actor and reason metadata.

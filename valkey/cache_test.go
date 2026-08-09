@@ -2,7 +2,9 @@ package valkey_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +24,66 @@ type fakeTransport struct {
 	publishErr      error
 	messages        chan []byte
 	subscribeErrors chan error
+	lastKey         string
+	lastTTL         time.Duration
+	lastChannel     string
+}
+
+func TestCacheNeverRegressesWhenWriteCompletionIsReordered(t *testing.T) {
+	t.Parallel()
+
+	transport := &reorderingTransport{
+		fakeTransport: newFakeTransport(), firstEntered: make(chan struct{}), releaseFirst: make(chan struct{}),
+	}
+	durable := memory.New()
+	provider := cache.New(durable, transport, cache.Config{TTL: time.Minute})
+	key := settings.NewKey("fleet", "generation", settings.IntCodec{})
+	change := settings.Change{Actor: "operator", Reason: "concurrent rollout"}
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := settings.Set(context.Background(), provider, settings.Global(), key, int64(1), change)
+		first <- err
+	}()
+	select {
+	case <-transport.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first cache write did not start")
+	}
+	if _, err := settings.Set(t.Context(), provider, settings.Global(), key, int64(2), change); err != nil {
+		t.Fatal(err)
+	}
+	close(transport.releaseFirst)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+
+	record, ok, err := provider.Get(t.Context(), settings.Global(), key.StableID())
+	if err != nil || !ok || record.Version != 2 || string(record.Data) != "2" {
+		t.Fatalf("cached record regressed = (%+v, %v, %v)", record, ok, err)
+	}
+}
+
+type reorderingTransport struct {
+	*fakeTransport
+	firstEntered chan struct{}
+	releaseFirst chan struct{}
+}
+
+func (transport *reorderingTransport) SetIfNewer(ctx context.Context, key string, value []byte, ttl time.Duration, version uint64) error {
+	var record settings.Record
+	if err := json.Unmarshal(value, &record); err != nil {
+		return err
+	}
+	if record.Version == 1 {
+		close(transport.firstEntered)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-transport.releaseFirst:
+		}
+	}
+	return transport.fakeTransport.SetIfNewer(ctx, key, value, ttl, version)
 }
 
 func newFakeTransport() *fakeTransport {
@@ -48,11 +110,19 @@ func (transport *fakeTransport) Get(_ context.Context, key string) ([]byte, bool
 	value, ok := transport.values[key]
 	return append([]byte(nil), value...), ok, nil
 }
-func (transport *fakeTransport) Set(_ context.Context, key string, value []byte, _ time.Duration) error {
+func (transport *fakeTransport) SetIfNewer(_ context.Context, key string, value []byte, ttl time.Duration, version uint64) error {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+	transport.lastKey = key
+	transport.lastTTL = ttl
 	if transport.setErr != nil {
 		return transport.setErr
+	}
+	if current, ok := transport.values[key]; ok {
+		var record settings.Record
+		if json.Unmarshal(current, &record) == nil && record.Version >= version {
+			return nil
+		}
 	}
 	transport.values[key] = append([]byte(nil), value...)
 	return nil
@@ -66,7 +136,10 @@ func (transport *fakeTransport) Delete(_ context.Context, key string) error {
 	delete(transport.values, key)
 	return nil
 }
-func (transport *fakeTransport) Publish(_ context.Context, _ string, value []byte) error {
+func (transport *fakeTransport) Publish(_ context.Context, channel string, value []byte) error {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.lastChannel = channel
 	if transport.publishErr != nil {
 		return transport.publishErr
 	}
@@ -75,6 +148,145 @@ func (transport *fakeTransport) Publish(_ context.Context, _ string, value []byt
 	default:
 	}
 	return nil
+}
+
+func TestCacheDefaultsAndExplicitConfigurationReachTransport(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		config     cache.Config
+		wantPrefix string
+		wantTTL    time.Duration
+	}{
+		{name: "zero values", wantPrefix: "settings:value:", wantTTL: time.Minute},
+		{name: "negative ttl", config: cache.Config{TTL: -time.Second}, wantPrefix: "settings:value:", wantTTL: time.Minute},
+		{name: "explicit", config: cache.Config{Prefix: "fleet", TTL: time.Millisecond}, wantPrefix: "fleet:value:", wantTTL: time.Millisecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transport := newFakeTransport()
+			provider := cache.New(memory.New(), transport, test.config)
+			key := settings.NewKey("config", "value", settings.StringCodec{})
+			if _, err := settings.Set(t.Context(), provider, settings.Global(), key, "value", settings.Change{
+				Actor: "operator", Reason: "verify transport configuration",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			transport.mu.Lock()
+			defer transport.mu.Unlock()
+			if !strings.HasPrefix(transport.lastKey, test.wantPrefix) || transport.lastTTL != test.wantTTL {
+				t.Fatalf("transport configuration = (%q, %s)", transport.lastKey, transport.lastTTL)
+			}
+		})
+	}
+}
+
+func TestCacheBypassReturnsDurableDataWhenCacheFillFails(t *testing.T) {
+	t.Parallel()
+
+	durable := memory.New()
+	key := settings.NewKey("cache", "fill", settings.StringCodec{})
+	change := settings.Change{Actor: "operator", Reason: "verify outage bypass"}
+	if _, err := settings.Set(t.Context(), durable, settings.Global(), key, "durable", change); err != nil {
+		t.Fatal(err)
+	}
+	transport := newFakeTransport()
+	transport.setErr = errors.New("cache unavailable")
+	provider := cache.New(durable, transport, cache.Config{OutagePolicy: cache.Bypass})
+
+	record, ok, err := provider.Get(t.Context(), settings.Global(), key.StableID())
+	if err != nil || !ok || string(record.Data) != "durable" {
+		t.Fatalf("single bypass = (%+v, %v, %v)", record, ok, err)
+	}
+	records, err := provider.BulkGet(t.Context(), []settings.Scope{settings.Global()}, []string{key.StableID()})
+	if err != nil || len(records) != 1 || string(records[0].Data) != "durable" {
+		t.Fatalf("bulk bypass = (%+v, %v)", records, err)
+	}
+}
+
+func TestWatchAcceptsExactBoundsAndUsesConfiguredChannel(t *testing.T) {
+	t.Parallel()
+
+	for _, buffer := range []int{1, 10_000} {
+		transport := newFakeTransport()
+		provider := cache.New(memory.New(), transport, cache.Config{Prefix: "fleet"})
+		ctx, cancel := context.WithCancel(t.Context())
+		events, errs, err := provider.Watch(ctx, buffer)
+		if err != nil {
+			t.Fatalf("buffer %d: %v", buffer, err)
+		}
+		transport.mu.Lock()
+		channel := transport.lastChannel
+		transport.mu.Unlock()
+		if channel != "fleet:invalidate" {
+			t.Fatalf("buffer %d channel = %q", buffer, channel)
+		}
+		cancel()
+		for range events {
+		}
+		for range errs {
+		}
+	}
+	for _, buffer := range []int{0, 10_001} {
+		provider := cache.New(memory.New(), newFakeTransport(), cache.Config{})
+		if _, _, err := provider.Watch(t.Context(), buffer); err == nil {
+			t.Fatalf("invalid buffer %d accepted", buffer)
+		}
+	}
+}
+
+func TestWatchContinuesAfterMalformedInvalidationAndNeverForwardsNilErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("malformed then valid", func(t *testing.T) {
+		transport := newFakeTransport()
+		provider := cache.New(memory.New(), transport, cache.Config{})
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		events, errs, err := provider.Watch(ctx, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := cache.Event{ProtocolVersion: settings.InvalidationProtocolVersion, Scope: settings.Global(), Key: "fleet/key", Version: 7, State: settings.StateValue}
+		encoded, err := json.Marshal(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transport.messages <- []byte("not-json")
+		transport.messages <- encoded
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Fatal("nil decode error")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("decode error not delivered")
+		}
+		select {
+		case got := <-events:
+			if got != want {
+				t.Fatalf("event = %+v", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("valid event after malformed message not delivered")
+		}
+	})
+
+	t.Run("nil transport error", func(t *testing.T) {
+		transport := newFakeTransport()
+		provider := cache.New(memory.New(), transport, cache.Config{})
+		events, errs, err := provider.Watch(t.Context(), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transport.subscribeErrors <- nil
+		if _, ok := <-events; ok {
+			t.Fatal("event channel remained open")
+		}
+		if err, ok := <-errs; ok {
+			t.Fatalf("nil transport error was forwarded: %v", err)
+		}
+	})
 }
 
 func TestCacheStrongBulkHistoryAndFailureContracts(t *testing.T) {
@@ -124,7 +336,7 @@ func TestCacheStrongBulkHistoryAndFailureContracts(t *testing.T) {
 	}
 	transport.mu.Lock()
 	transport.publishErr = nil
-	transport.deleteErr = errors.New("delete unavailable")
+	transport.setErr = errors.New("set unavailable")
 	transport.mu.Unlock()
 	if _, err := settings.Inherit(ctx, provider, settings.Global(), key, change); err == nil {
 		t.Fatal("read-after-write delete failure was hidden")
@@ -175,7 +387,10 @@ func TestCacheRejectsMalformedEntriesAndWatcherInputs(t *testing.T) {
 	for range events {
 	}
 }
-func (transport *fakeTransport) Subscribe(context.Context, string) (<-chan []byte, <-chan error) {
+func (transport *fakeTransport) Subscribe(_ context.Context, channel string) (<-chan []byte, <-chan error) {
+	transport.mu.Lock()
+	transport.lastChannel = channel
+	transport.mu.Unlock()
 	return transport.messages, transport.subscribeErrors
 }
 

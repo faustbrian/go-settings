@@ -2,9 +2,10 @@
 package memory
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -49,7 +50,7 @@ func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (
 	defer store.mu.RUnlock()
 	record, ok := store.records[coordinate{scope: scope, key: key}]
 	record.Data = append([]byte(nil), record.Data...)
-	return record, ok, nil
+	return record, ok && record.State != settings.StateMissing, nil
 }
 
 func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys []string) ([]settings.Record, error) {
@@ -58,7 +59,7 @@ func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	records := make([]settings.Record, 0, len(scopes)*len(keys))
+	var records []settings.Record
 	for _, scope := range scopes {
 		for _, key := range keys {
 			if record, ok := store.records[coordinate{scope: scope, key: key}]; ok {
@@ -82,7 +83,10 @@ func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(mutations) == 0 || len(mutations) > 1000 {
+	if len(mutations) == 0 {
+		return nil, fmt.Errorf("%w: bulk size", settings.ErrInvalidMutation)
+	}
+	if len(mutations) > 1000 {
 		return nil, fmt.Errorf("%w: bulk size", settings.ErrInvalidMutation)
 	}
 	seen := make(map[coordinate]struct{}, len(mutations))
@@ -133,7 +137,7 @@ func (store *Store) applyLocked(mutation settings.Mutation) settings.Record {
 		store.records[coord] = after
 	case settings.ActionInherit:
 		after.State = settings.StateMissing
-		delete(store.records, coord)
+		store.records[coord] = after
 	}
 	store.history = append(store.history, settings.ChangeRecord{
 		Scope: mutation.Scope, Key: mutation.Key, Action: mutation.Action,
@@ -162,7 +166,10 @@ func (store *Store) History(ctx context.Context, query settings.HistoryQuery) ([
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if query.Limit <= 0 || query.Limit > 1000 {
+	if query.Limit <= 0 {
+		return nil, fmt.Errorf("settings: history limit must be between 1 and 1000")
+	}
+	if query.Limit > 1000 {
 		return nil, fmt.Errorf("settings: history limit must be between 1 and 1000")
 	}
 	store.mu.RLock()
@@ -176,6 +183,8 @@ func (store *Store) History(ctx context.Context, query settings.HistoryQuery) ([
 			records = append(records, record)
 		}
 	}
-	sort.SliceStable(records, func(i, j int) bool { return records[i].Version > records[j].Version })
+	slices.SortFunc(records, func(left, right settings.ChangeRecord) int {
+		return cmp.Compare(right.Version, left.Version)
+	})
 	return records, nil
 }

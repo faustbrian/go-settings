@@ -15,6 +15,9 @@ func TestStoreBoundariesCopiesAndHistory(t *testing.T) {
 
 	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
 	store := memory.NewWithClock(func() time.Time { return now })
+	if capabilities := store.Capabilities(); !capabilities.AtomicBulk || !capabilities.CompareAndSet || !capabilities.History {
+		t.Fatalf("capabilities = %+v", capabilities)
+	}
 	change := settings.Change{Actor: "operator", Reason: "test"}
 	mutation := settings.Mutation{
 		Scope: settings.Global(), Key: "test/key", Action: settings.ActionSet,

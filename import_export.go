@@ -3,7 +3,8 @@ package settings
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -112,11 +113,11 @@ func Export(ctx context.Context, provider Provider, scopes []Scope, definitions 
 		}
 		entries = append(entries, entry)
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Scope.String() == entries[j].Scope.String() {
-			return entries[i].Key < entries[j].Key
+	slices.SortFunc(entries, func(left, right ExportEntry) int {
+		if scopeOrder := strings.Compare(left.Scope.String(), right.Scope.String()); scopeOrder != 0 {
+			return scopeOrder
 		}
-		return entries[i].Scope.String() < entries[j].Scope.String()
+		return strings.Compare(left.Key, right.Key)
 	})
 	at := options.At
 	if at.IsZero() {

@@ -6,7 +6,8 @@ for target in \
     FuzzCodecsRejectMalformedPersistedDataWithoutPanicking \
     FuzzScopeIdentifiers \
     FuzzImportDocumentsFailClosed \
-    FuzzResolutionOfMalformedStoredValues
+    FuzzResolutionOfMalformedStoredValues \
+    FuzzRestoreSnapshotFailsClosed
 do
     go test . -run='^$' -fuzz="$target" -fuzztime="$fuzz_time" \
         -parallel=4 -timeout=2m
