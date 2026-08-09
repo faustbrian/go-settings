@@ -39,6 +39,62 @@ func TestRuntimeWithoutPeriodicWorkOwnsNoBackgroundLoop(t *testing.T) {
 	}
 }
 
+func TestRefreshLoopCancellationDuringDebounceSkipsRefresh(t *testing.T) {
+	key := NewKey("internal", "debounce-cancellation", StringCodec{})
+	enteredDebounce := make(chan struct{})
+	refreshAttempted := make(chan struct{}, 1)
+	runtime, err := NewRuntime(RuntimeConfig{
+		Provider: internalSnapshotProvider{}, Chain: Chain(Global()), Definitions: []Definition{key},
+		Provenance: ProvenanceProvider, RefreshTimeout: time.Second,
+		MaxJitter: time.Nanosecond,
+		Jitter: func(time.Duration) time.Duration {
+			close(enteredDebounce)
+			return 0
+		},
+		InvalidationDebounce: time.Minute,
+		Executor: RefreshExecutorFunc(func(ctx context.Context, _ func(context.Context) error) error {
+			refreshAttempted <- struct{}{}
+			return ctx.Err()
+		}),
+		Policies: map[SettingClass]ClassPolicy{
+			ClassStandard: {
+				FreshFor: time.Minute, MaxStaleness: time.Minute,
+				OnUnavailable: FailClosed, OnStale: ServeLastKnownGood, OnExpired: FailClosed,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	runtime.waiters.Add(1)
+	go runtime.runRefreshLoop(ctx)
+	runtime.triggers <- struct{}{}
+	select {
+	case <-enteredDebounce:
+	case <-time.After(time.Second):
+		t.Fatal("refresh loop did not enter invalidation debounce")
+	}
+	cancel()
+
+	drained := make(chan struct{})
+	go func() {
+		runtime.waiters.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		t.Fatal("refresh loop did not drain after debounce cancellation")
+	}
+	select {
+	case <-refreshAttempted:
+		t.Fatal("refresh started after debounce cancellation")
+	default:
+	}
+}
+
 func TestRuntimeConstructionRejectsDefaultEncodingFailure(t *testing.T) {
 	key := NewKey("internal", "bad-default", StringCodec{}, WithDefault("safe"))
 	for name, definition := range map[string]Definition{

@@ -3,11 +3,14 @@ package postgres_test
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	settings "github.com/faustbrian/golib/pkg/settings"
 	"github.com/faustbrian/golib/pkg/settings/postgres"
 	"github.com/faustbrian/golib/pkg/settings/settingstest"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,11 +20,52 @@ func TestProviderConformance(t *testing.T) {
 		t.Skip("POSTGRES_URL is not set")
 	}
 
-	pool, err := pgxpool.New(context.Background(), url)
+	admin, err := pgxpool.New(t.Context(), url)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	t.Cleanup(pool.Close)
+	t.Cleanup(admin.Close)
+	schema := "settings_conformance_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	identifier := pgx.Identifier{schema}.Sanitize()
+	if _, err := admin.Exec(t.Context(), "CREATE SCHEMA "+identifier); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(ctx, "DROP SCHEMA "+identifier+" CASCADE"); err != nil {
+			t.Errorf("drop schema: %v", err)
+		}
+	})
+	config, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	config.ConnConfig.RuntimeParams["application_name"] = schema
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatalf("connect isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(ctx, `SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE application_name = $1 AND pid <> pg_backend_pid()`, schema); err != nil {
+			t.Errorf("terminate test connections: %v", err)
+		}
+		closed := make(chan struct{})
+		go func() {
+			pool.Close()
+			close(closed)
+		}()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("close test pool: acquired connection was not released")
+		}
+	})
 	store := postgres.New(pool)
 	if err := store.Migrate(t.Context()); err != nil {
 		t.Fatalf("migrate: %v", err)

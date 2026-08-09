@@ -16,6 +16,13 @@ func (codec testStringCodec) Version() uint32               { return codec.versi
 func (testStringCodec) Encode(value string) ([]byte, error) { return []byte(value), nil }
 func (testStringCodec) Decode(data []byte) (string, error)  { return string(data), nil }
 
+type alternateStringCodec struct{ version uint32 }
+
+func (codec alternateStringCodec) ID() string                    { return "alternate-string" }
+func (codec alternateStringCodec) Version() uint32               { return codec.version }
+func (alternateStringCodec) Encode(value string) ([]byte, error) { return []byte(value), nil }
+func (alternateStringCodec) Decode(data []byte) (string, error)  { return string(data), nil }
+
 type faultProvider struct {
 	settings.Provider
 	getCalls int
@@ -125,15 +132,80 @@ func TestInternalMigrationFailureBranches(t *testing.T) {
 func TestRunReportsSkippedCheckpoints(t *testing.T) {
 	key := settings.NewKey("internal", "value", settings.StringCodec{})
 	plan := Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
-		ChangeDefault("default", key, []byte("old"), []byte("new")),
+		ChangeDefault("first", key, []byte("old"), []byte("new")),
+		ChangeDefault("second", key, []byte("new"), []byte("next")),
 	}}
 	journal := NewMemoryJournal()
 	change := settings.Change{Actor: "migration", Reason: "test"}
-	if _, err := Run(t.Context(), memory.New(), journal, plan, []settings.Scope{settings.Global()}, change); err != nil {
-		t.Fatal(err)
+	first, err := Run(t.Context(), memory.New(), journal, plan, []settings.Scope{settings.Global()}, change)
+	if err != nil || first != (Report{Completed: 2}) {
+		t.Fatalf("completed report = %#v, %v", first, err)
 	}
-	report, err := Run(t.Context(), memory.New(), journal, plan, []settings.Scope{settings.Global()}, change)
-	if err != nil || report.Skipped != 1 {
-		t.Fatalf("skipped report = %#v, %v", report, err)
+	second, err := Run(t.Context(), memory.New(), journal, plan, []settings.Scope{settings.Global()}, change)
+	if err != nil || second != (Report{Skipped: 2}) {
+		t.Fatalf("skipped report = %#v, %v", second, err)
+	}
+}
+
+func TestValidatePlanEnforcesEachIndependentTransformContract(t *testing.T) {
+	t.Parallel()
+
+	from := settings.NewKey("internal", "value", testStringCodec{version: 1})
+	upgraded := settings.NewKey("internal", "value", testStringCodec{version: 2})
+	alternate := settings.NewKey("internal", "value", alternateStringCodec{version: 1})
+	transform := func(data []byte) ([]byte, error) { return data, nil }
+	validStep := Transform("transform", from, upgraded, transform)
+	validPlan := Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{validStep}}
+	scopes := []settings.Scope{settings.Global()}
+
+	invalid := []struct {
+		name   string
+		plan   Plan
+		scopes []settings.Scope
+	}{
+		{name: "missing plan id", plan: Plan{FromSchema: "v1", ToSchema: "v2", Steps: []Step{validStep}}, scopes: scopes},
+		{name: "missing source schema", plan: Plan{ID: "plan", ToSchema: "v2", Steps: []Step{validStep}}, scopes: scopes},
+		{name: "missing target schema", plan: Plan{ID: "plan", FromSchema: "v1", Steps: []Step{validStep}}, scopes: scopes},
+		{name: "same schema", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v1", Steps: []Step{validStep}}, scopes: scopes},
+		{name: "missing steps", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2"}, scopes: scopes},
+		{name: "missing scopes", plan: validPlan},
+		{name: "missing step id", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("", from, upgraded, transform),
+		}}, scopes: scopes},
+		{name: "missing step target", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("transform", from, nil, transform),
+		}}, scopes: scopes},
+		{name: "missing step source", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("transform", nil, upgraded, transform),
+		}}, scopes: scopes},
+		{name: "missing transform", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("transform", from, upgraded, nil),
+		}}, scopes: scopes},
+		{name: "different stable id", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("transform", from,
+				settings.NewKey("internal", "other", testStringCodec{version: 2}), transform),
+		}}, scopes: scopes},
+		{name: "unchanged codec", plan: Plan{ID: "plan", FromSchema: "v1", ToSchema: "v2", Steps: []Step{
+			Transform("transform", from, from, transform),
+		}}, scopes: scopes},
+	}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validatePlan(test.plan, test.scopes); err == nil {
+				t.Fatal("invalid plan accepted")
+			}
+		})
+	}
+	for name, step := range map[string]Step{
+		"version change": validStep,
+		"codec change":   Transform("transform", from, alternate, transform),
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := validPlan
+			plan.Steps = []Step{step}
+			if err := validatePlan(plan, scopes); err != nil {
+				t.Fatalf("valid transform rejected: %v", err)
+			}
+		})
 	}
 }

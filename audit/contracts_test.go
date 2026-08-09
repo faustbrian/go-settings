@@ -52,3 +52,25 @@ func TestReadRejectsUninterpretableHistoryAndCopiesPublicValues(t *testing.T) {
 		t.Fatal("audit result aliases provider memory")
 	}
 }
+
+func TestReadRedactsUnsafeProviderValuesForEverySensitiveState(t *testing.T) {
+	t.Parallel()
+
+	registry := settings.NewRegistry()
+	key := settings.NewKey("audit", "secret", settings.StringCodec{}, settings.WithSensitive[string]())
+	if err := registry.Register(key); err != nil {
+		t.Fatal(err)
+	}
+	records, err := audit.Read(t.Context(), historyReader{records: []settings.ChangeRecord{{
+		Key: key.StableID(), CodecID: key.CodecID(),
+		Before: settings.AuditValue{State: settings.StateValue, Data: []byte("before")},
+		After:  settings.AuditValue{State: settings.StateCleared, Data: []byte("after")},
+	}}}, registry, settings.HistoryQuery{Scope: settings.Global(), Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || !records[0].Before.Redacted || records[0].After.Redacted ||
+		len(records[0].Before.Data) != 0 || len(records[0].After.Data) != 0 {
+		t.Fatalf("sensitive audit records = %#v", records)
+	}
+}

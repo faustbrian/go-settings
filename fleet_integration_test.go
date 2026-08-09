@@ -20,11 +20,41 @@ func TestRuntimeFleetWithRealPostgreSQLAndValkey(t *testing.T) {
 		t.Skip("POSTGRES_URL and VALKEY_ADDR are required")
 	}
 
-	pool, err := pgxpool.New(t.Context(), postgresURL)
+	prefix := "settings:fleet-integration:" + time.Now().UTC().Format("20060102150405.000000000")
+	applicationName := "settings-fleet-" + time.Now().UTC().Format("20060102150405000000000")
+	admin, err := pgxpool.New(t.Context(), postgresURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close)
+	t.Cleanup(admin.Close)
+	config, err := pgxpool.ParseConfig(postgresURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ConnConfig.RuntimeParams["application_name"] = applicationName
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(ctx, `SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE application_name = $1 AND pid <> pg_backend_pid()`, applicationName); err != nil {
+			t.Errorf("terminate test connections: %v", err)
+		}
+		closed := make(chan struct{})
+		go func() {
+			pool.Close()
+			close(closed)
+		}()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("close test pool: acquired connection was not released")
+		}
+	})
 	durable := postgres.New(pool)
 	if err := durable.Migrate(t.Context()); err != nil {
 		t.Fatal(err)
@@ -35,7 +65,6 @@ func TestRuntimeFleetWithRealPostgreSQLAndValkey(t *testing.T) {
 	}
 	t.Cleanup(client.Close)
 
-	prefix := "settings:fleet-integration:" + time.Now().UTC().Format("20060102150405.000000000")
 	newProvider := func() *cache.Cache {
 		return cache.New(durable, cache.NewNativeTransport(client), cache.Config{
 			Prefix: prefix, TTL: time.Minute, ReadPolicy: cache.BoundedStale, OutagePolicy: cache.Bypass,
