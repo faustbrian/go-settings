@@ -40,3 +40,8 @@ backend dependencies by importing `postgres` or `valkey`.
 
 Requires Go 1.26+, PostgreSQL 16 or 17 for durability, and Valkey 9 when
 caching is enabled. Licensed under the [MIT License](LICENSE).
+
+## Ecosystem
+
+Use the [Golib documentation portal](https://github.com/faustbrian/golib/blob/main/docs/index.md)
+to choose companion packages, supported stacks, recipes, and operations guidance.
