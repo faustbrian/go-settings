@@ -17,6 +17,8 @@
 
 ### Changed
 
+- Upgrade `golang.org/x/text` to v0.41.0 and `golang.org/x/sys` to v0.47.0 so
+  the dependency graph no longer contains GO-2026-5970 or GO-2026-5024.
 - Make Valkey cache replacement version-conditional and preserve versioned
   tombstones so delayed fills cannot regress values or resurrect inherited
   settings.
