@@ -30,6 +30,8 @@
 ### Fixed
 
 - Make native Valkey subscription coverage deterministic across CI runners.
+- Preserve deterministic newest-event coalescing without unreachable fallback
+  branches in the Valkey watcher.
 
 ### Compatibility
 

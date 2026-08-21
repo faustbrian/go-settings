@@ -427,13 +427,12 @@ func TestCacheDefinesStaleAndOutageBehavior(t *testing.T) {
 	}
 }
 
-func TestWatchIsBoundedCoalescingAndCancellable(t *testing.T) {
+func TestWatchCoalescesToNewestEvent(t *testing.T) {
 	t.Parallel()
 
 	transport := newFakeTransport()
 	provider := cache.New(memory.New(), transport, cache.Config{Prefix: "settings:test", TTL: time.Minute})
-	ctx, cancel := context.WithCancel(context.Background())
-	events, errs, err := provider.Watch(ctx, 1)
+	events, errs, err := provider.Watch(t.Context(), 1)
 	if err != nil {
 		t.Fatalf("watch: %v", err)
 	}
@@ -444,23 +443,24 @@ func TestWatchIsBoundedCoalescingAndCancellable(t *testing.T) {
 			t.Fatalf("set %d: %v", index, err)
 		}
 	}
+	close(transport.messages)
 	select {
-	case <-events:
-	case err := <-errs:
-		t.Fatalf("watch error: %v", err)
+	case watchErr, open := <-errs:
+		if open {
+			t.Fatalf("watch error = %v", watchErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch did not stop after transport closed")
+	}
+	select {
+	case event := <-events:
+		if event.Version != 10 {
+			t.Fatalf("coalesced event version = %d, want newest version 10", event.Version)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("watch did not deliver")
 	}
-	cancel()
-	deadline := time.After(time.Second)
-	for {
-		select {
-		case _, open := <-events:
-			if !open {
-				return
-			}
-		case <-deadline:
-			t.Fatal("watch did not close")
-		}
+	if _, open := <-events; open {
+		t.Fatal("watch remained open after transport closed")
 	}
 }

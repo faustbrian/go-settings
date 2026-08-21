@@ -269,18 +269,13 @@ func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan
 					default:
 					}
 				} else {
-					select {
-					case events <- event:
-					default:
+					for len(events) == cap(events) {
 						select {
 						case <-events:
 						default:
 						}
-						select {
-						case events <- event:
-						default:
-						}
 					}
+					events <- event
 				}
 			}
 		}
