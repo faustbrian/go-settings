@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
+	settings "github.com/faustbrian/go-settings"
 )
 
 func TestDecodeRecordEnforcesEveryCacheContract(t *testing.T) {

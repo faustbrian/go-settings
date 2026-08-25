@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/golib/pkg/settings"
-	"github.com/faustbrian/golib/pkg/settings/memory"
+	"github.com/faustbrian/go-settings"
+	"github.com/faustbrian/go-settings/memory"
 )
 
 func TestSnapshotCacheRoundTripPreservesValidatedOriginAndAge(t *testing.T) {

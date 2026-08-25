@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
-	"github.com/faustbrian/golib/pkg/settings/memory"
-	cache "github.com/faustbrian/golib/pkg/settings/valkey"
+	settings "github.com/faustbrian/go-settings"
+	"github.com/faustbrian/go-settings/memory"
+	cache "github.com/faustbrian/go-settings/valkey"
 )
 
 func BenchmarkCacheInvalidation(b *testing.B) {

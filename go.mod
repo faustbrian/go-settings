@@ -1,4 +1,4 @@
-module github.com/faustbrian/golib/pkg/settings
+module github.com/faustbrian/go-settings
 
 go 1.26.6
 

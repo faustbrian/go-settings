@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
+	settings "github.com/faustbrian/go-settings"
 )
 
 // Transport is the small Valkey contract needed by Cache.

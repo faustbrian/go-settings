@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
+	settings "github.com/faustbrian/go-settings"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

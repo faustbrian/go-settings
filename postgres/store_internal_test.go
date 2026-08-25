@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
+	settings "github.com/faustbrian/go-settings"
 )
 
 func TestNullableDataAndAuditRedactionFollowPersistedState(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	settings "github.com/faustbrian/golib/pkg/settings"
-	"github.com/faustbrian/golib/pkg/settings/memory"
+	settings "github.com/faustbrian/go-settings"
+	"github.com/faustbrian/go-settings/memory"
 )
 
 func TestStoreAcceptsExactBulkAndHistoryLimits(t *testing.T) {

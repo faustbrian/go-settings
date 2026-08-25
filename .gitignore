@@ -1,4 +1,5 @@
+.artifacts/
 .tools/
+.gocache*/
+.DS_Store
 coverage.out
-mutation-results.json
-mutation-dry-run.json

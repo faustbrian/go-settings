@@ -1,6 +1,6 @@
 # API reference
 
-The canonical signature reference is `go doc github.com/faustbrian/golib/pkg/settings`
+The canonical signature reference is `go doc github.com/faustbrian/go-settings`
 and `go doc` for each subpackage. This page groups the contracts.
 
 `Codec[T]` supplies a stable ID and version plus typed encoding and decoding.
