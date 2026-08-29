@@ -7,7 +7,7 @@ provider into request or job code. Never place precedence in mutable globals.
 registry := settings.NewRegistry()
 _ = registry.RegisterNamespace(settings.NewNamespace("billing", "Billing"))
 dueDays := settings.NewKey("billing", "invoice.due_days", settings.IntCodec{},
-    settings.WithDefault[int64](14),
+    settings.WithDefault(int64(14)),
     settings.WithValidation(func(value int64) error {
         if value < 0 || value > 365 { return errors.New("outside 0..365") }
         return nil
