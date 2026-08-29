@@ -8,6 +8,11 @@
   checksum-pinned `go-library-tools` contract while retaining settings-owned
   mutation evidence, API baselines, fuzz policy, and benchmark coverage.
 
+### Documentation
+
+- Remove the archived monorepo documentation link; package guidance remains in
+  the repository-owned documentation.
+
 ## 1.0.0 - 2026-08-25
 
 ### Changed
