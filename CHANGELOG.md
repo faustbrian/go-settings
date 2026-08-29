@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- Replace copied repository verification scripts with the released,
+  checksum-pinned `go-library-tools` contract while retaining settings-owned
+  mutation evidence, API baselines, fuzz policy, and benchmark coverage.
+
 ## 1.0.0 - 2026-08-25
 
 ### Changed
