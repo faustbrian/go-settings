@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-settings",
+  "module": ".",
+  "package": "valkey",
+  "gate": "mutation",
+  "input_digest": "sha256:757819756a65a6c4cf568c3f06a66c601d9db2a7365ed3edba3f7044fd06b855",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:ba97d6a86bc77f3a522a608fa5f7c0262b81718a8ab11f2ca3ccee32c3011435",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "amd64",
+    "GOOS": "linux",
+    "GOVERSION": "go1.26.6",
+    "gremlins_binary_sha256": "sha256:79258e3649095fef7f2fe9359acaea7989ef11f88e63dce6acd7d86dcc347cbb"
+  },
+  "completed_at": "2026-08-29T07:50:06.146684621Z"
+}

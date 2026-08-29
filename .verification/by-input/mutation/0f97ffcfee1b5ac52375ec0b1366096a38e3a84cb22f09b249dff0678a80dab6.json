@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-settings",
+  "module": ".",
+  "package": "audit",
+  "gate": "mutation",
+  "input_digest": "sha256:0f97ffcfee1b5ac52375ec0b1366096a38e3a84cb22f09b249dff0678a80dab6",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:30436033cc52a50444fef0222cd8d3381c1ba4b11133f23c4d8bb4e96b8b5423",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "amd64",
+    "GOOS": "linux",
+    "GOVERSION": "go1.26.6",
+    "gremlins_binary_sha256": "sha256:79258e3649095fef7f2fe9359acaea7989ef11f88e63dce6acd7d86dcc347cbb"
+  },
+  "completed_at": "2026-08-29T07:47:01.72637747Z"
+}
