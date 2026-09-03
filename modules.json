@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "github.com/faustbrian/go-settings",
   "go_version": "1.26.6",
   "modules": [
@@ -125,6 +125,98 @@
       "goal_files": [],
       "goal_status": "not-applicable",
       "goal_evidence": [],
+      "cohesion": {
+        "family": "persistence-and-durability",
+        "secondary_capabilities": [
+          "configuration"
+        ],
+        "responsibility": "Provide typed runtime-mutable settings, explicit precedence, immutable snapshots, optimistic writes, audit history, schema evolution, and optional persistence and cache adapters.",
+        "non_goals": [
+          "Provide static startup configuration, feature flags, authorization policy, secret storage, or a business-rule engine.",
+          "Own application lifecycle, PostgreSQL connections, Valkey clients, encryption keys, or process-global state."
+        ],
+        "public_package_identifier": "settings",
+        "primary_entry_packages": [
+          "github.com/faustbrian/go-settings"
+        ],
+        "package_selection": {
+          "github.com/faustbrian/go-settings": "Use for typed runtime settings, precedence, immutable snapshots, optimistic writes, import and export, and explicit runtime convergence.",
+          "github.com/faustbrian/go-settings/audit": "Use to read setting history with definition-aware redaction.",
+          "github.com/faustbrian/go-settings/memory": "Use for a deterministic concurrent in-memory provider in tests or local applications.",
+          "github.com/faustbrian/go-settings/migration": "Use to execute resumable setting-definition migrations against a provider and journal.",
+          "github.com/faustbrian/go-settings/postgres": "Use for durable PostgreSQL settings, history, snapshots, and migration journaling.",
+          "github.com/faustbrian/go-settings/settingstest": "Use to verify custom providers against the shared settings conformance contract.",
+          "github.com/faustbrian/go-settings/valkey": "Use for an optional Valkey cache and invalidation layer in front of durable settings storage."
+        },
+        "lifecycle_status": "active",
+        "maturity": "stable",
+        "construction_styles": [
+          "functional-options",
+          "new-config",
+          "plain-function"
+        ],
+        "lifecycle_styles": [
+          "close",
+          "start",
+          "stateless"
+        ],
+        "ownership": {
+          "configuration": "caller",
+          "mutable_inputs": [
+            "borrow",
+            "copy"
+          ],
+          "runtime_resources": "caller",
+          "background_work": "package"
+        },
+        "optional_owned_dependencies": [],
+        "adapters": [
+          "github.com/faustbrian/go-settings/memory",
+          "github.com/faustbrian/go-settings/postgres",
+          "github.com/faustbrian/go-settings/valkey"
+        ],
+        "companions": [
+          "github.com/faustbrian/go-settings/audit",
+          "github.com/faustbrian/go-settings/migration",
+          "github.com/faustbrian/go-settings/settingstest"
+        ],
+        "supported_go": {
+          "minimum": "1.26.6",
+          "tested": [
+            "1.26.6"
+          ]
+        },
+        "supported_platforms": [
+          "portable-go"
+        ],
+        "supported_backends": [
+          "memory",
+          "postgresql",
+          "valkey"
+        ],
+        "supported_protocols": [
+          "json"
+        ],
+        "documentation": {
+          "readme": "README.md",
+          "api": "docs/api.md",
+          "adoption": "docs/adoption.md",
+          "security": "docs/secrets.md",
+          "compatibility": "COMPATIBILITY.md",
+          "performance": "docs/benchmarks.md",
+          "examples": "docs/quick-start.md",
+          "faq": "docs/faq.md",
+          "changelog": "CHANGELOG.md",
+          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-settings",
+          "ecosystem_index": "https://github.com/faustbrian/go-library-tools/blob/v1.3.0/docs/ecosystem/README.md"
+        },
+        "known_good_compatibility_sets": [],
+        "delivery": {
+          "implementation": "not-started",
+          "hardening": "not-started",
+          "release": "not-started"
+        }
+      },
       "gates": {
         "api_compatibility": true,
         "benchmarks": true,

@@ -4,11 +4,20 @@
 
 ### Changed
 
+- Adopt the `go-library-tools` v1.3.0 schema-v2 cohesion contract and local
+  `make cohesion` gate without changing settings API or runtime behavior.
+- Pin reusable CI to the v1.3.0 workflow and enforce cohesion metadata in the
+  repository's required CI contract.
+
 - Replace copied repository verification scripts with the released,
   checksum-pinned `go-library-tools` contract while retaining settings-owned
   mutation evidence, API baselines, fuzz policy, and benchmark coverage.
 
 ### Documentation
+
+- Publish the module's family, capabilities, ownership, lifecycle, supported
+  environments, package selection, and delivery status, and link the README to
+  the immutable v1.3.0 ecosystem index and family guidance.
 
 - Remove the archived monorepo documentation link; package guidance remains in
   the repository-owned documentation.
