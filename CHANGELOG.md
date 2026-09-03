@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Adopt the checksum-verified `go-library-tools` v1.4.0 CLI and immutable W14
+  workflow so local and hosted cohesion and specification checks use the final
+  authoritative contract.
+- Correct runtime-resource ownership metadata to reflect package-owned runtime
+  state alongside caller-owned provider and transport resources.
 - Adopt the `go-library-tools` v1.3.0 schema-v2 cohesion contract and local
   `make cohesion` gate without changing settings API or runtime behavior.
 - Pin reusable CI to the v1.3.0 workflow and enforce cohesion metadata in the
@@ -15,6 +20,9 @@
 
 ### Documentation
 
+- Clarify that callers close external provider resources while `Runtime.Close`
+  drains only package-owned background work.
+- Link the module to the immutable v1.4.0 Golib ecosystem guidance.
 - Publish the module's family, capabilities, ownership, lifecycle, supported
   environments, package selection, and delivery status, and link the README to
   the immutable v1.3.0 ecosystem index and family guidance.

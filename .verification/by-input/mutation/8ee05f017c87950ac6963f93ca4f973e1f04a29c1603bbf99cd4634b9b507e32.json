@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-settings",
+  "module": ".",
+  "package": "migration",
+  "gate": "mutation",
+  "input_digest": "sha256:8ee05f017c87950ac6963f93ca4f973e1f04a29c1603bbf99cd4634b9b507e32",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:b0d7c16ea3c9c25df7754a4c393545c5e2793c1eac3cfc23093f19791b5fe6fb",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "arm64",
+    "GOOS": "darwin",
+    "GOVERSION": "go1.26.6",
+    "gremlins_binary_sha256": "sha256:e05bf25d661b16ab96d6f2e17aed481d393930e0f24205cc341b010f887368a0"
+  },
+  "completed_at": "2026-09-03T13:16:42.671281Z"
+}
