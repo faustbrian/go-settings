@@ -14,3 +14,8 @@ Valkey-only provider is a separate application-owned tradeoff.
 
 Third-party providers must advertise exact capabilities and pass
 `settingstest.RunProvider`. Never emulate guarantees a backend cannot provide.
+
+Callers retain and close provider connections, PostgreSQL pools, Valkey clients,
+transports, snapshot stores, and invalidation sources. `Runtime.Close` cancels
+and drains the package-owned timers and goroutines; it does not close those
+caller-owned collaborators.
