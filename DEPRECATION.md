@@ -12,3 +12,16 @@ the exception.
 Silent behavior changes, undocumented aliases, and indefinite deprecated code
 are prohibited. Deprecations are checked during compatibility and release
 review.
+
+## Runtime.Close
+
+`Runtime.Close(ctx)` is deprecated in favor of `Runtime.Shutdown(ctx)` because
+context-aware complete shutdown follows the ecosystem `Shutdown(ctx)`
+vocabulary; `Close` is reserved for immediate synchronous `io.Closer`-style
+release. Replace the method name without changing call order or context budget.
+The compatibility method delegates to `Shutdown`.
+
+Removal is permitted only in an authorized next major release after `Shutdown`
+has been publicly consumable for the longer of 180 days and two stable minor
+releases that retain `Close(ctx)`. Owned-consumer and clean-consumer migration
+proof must pass before removal.

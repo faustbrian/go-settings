@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Add repeatable, concurrency-safe `Runtime.Shutdown(ctx)` as the canonical
+  complete cancel-and-wait lifecycle operation.
+
 ### Changed
 
 - Adopt the checksum-verified `go-library-tools` v1.4.0 CLI and immutable W14
@@ -13,10 +18,16 @@
   `make cohesion` gate without changing settings API or runtime behavior.
 - Pin reusable CI to the v1.3.0 workflow and enforce cohesion metadata in the
   repository's required CI contract.
-
 - Replace copied repository verification scripts with the released,
   checksum-pinned `go-library-tools` contract while retaining settings-owned
   mutation evidence, API baselines, fuzz policy, and benchmark coverage.
+
+### Deprecated
+
+- Deprecate `Runtime.Close(ctx)` in favor of `Runtime.Shutdown(ctx)` while
+  preserving it as a source-compatible delegation. The old name conflicts with
+  the ecosystem lifecycle vocabulary and may be removed only in an authorized
+  next major after the documented time, release, and consumer-proof boundary.
 
 ### Documentation
 

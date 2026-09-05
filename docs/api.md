@@ -16,8 +16,15 @@ precedence. `Resolve` returns a typed value, status, owner, version, and path.
 `Runtime` validates and atomically serves one process-local last-known-good
 snapshot. `NewRuntime` requires a snapshot-capable provider, explicit bounded
 policies for every `SettingClass`, and a bounded refresh. `Start`, `Ready`,
-`Refresh`, `ResolveCurrent`, `Apply`, and `Close` expose lifecycle, freshness,
-same-pod read-after-write, and shutdown behavior. `SnapshotStore` supplies an
+`Refresh`, `ResolveCurrent`, `Apply`, and `Shutdown` expose lifecycle,
+freshness, same-pod read-after-write, and shutdown behavior. `Shutdown` is
+repeatable and concurrency-safe; every caller waits for the same complete
+owned-goroutine drain within its own context. Once shutdown begins, cancellation
+ends only that caller's wait and does not stop the drain. If a caller's context
+ends while `Start` is still in progress, shutdown has not begun and a later
+call is required. Calls made after the drain return nil even with a canceled
+context. The deprecated `Close(ctx)` method delegates to `Shutdown(ctx)`.
+`SnapshotStore` supplies an
 optional caller-encrypted cold-start cache; `InvalidationSource` supplies
 data-free convergence hints. See [fleet resilience](fleet-resilience.md).
 

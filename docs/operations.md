@@ -11,7 +11,7 @@ import, and export cap at 1000 coordinates; values cap at 1 MiB.
 
 For Kubernetes deployments, expose `Runtime.Ready` as readiness, keep liveness
 dependency-independent, alert before class-specific maximum staleness, and
-drain `Runtime.Close` inside the SIGTERM grace period. Track refresh and
+drain `Runtime.Shutdown` inside the SIGTERM grace period. Track refresh and
 convergence windows without value or owner labels. The complete startup,
 failover, rollout, and shutdown contract is in
 [fleet resilience](fleet-resilience.md).

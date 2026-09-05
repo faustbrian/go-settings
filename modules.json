@@ -157,6 +157,7 @@
         ],
         "lifecycle_styles": [
           "close",
+          "shutdown",
           "start",
           "stateless"
         ],
