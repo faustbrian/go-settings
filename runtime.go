@@ -549,8 +549,8 @@ type InvalidationSource interface {
 
 // Start obtains an initial last-known-good snapshot before reporting ready,
 // then starts periodic reconciliation and invalidation watching. The supplied
-// context owns the background-loop lifetime; cancel it or call Close to stop
-// the runtime.
+// context owns the background-loop lifetime; cancel it or call Shutdown to
+// stop the runtime.
 func (runtime *Runtime) Start(ctx context.Context) error {
 	runtime.lifecycleMu.Lock()
 	if runtime.closed {
@@ -594,16 +594,20 @@ func (runtime *Runtime) Start(ctx context.Context) error {
 	runtime.cancel = cancel
 	runtime.stopped = make(chan struct{})
 	runtime.started = true
+	if runtime.refreshInterval > 0 || runtime.invalidations != nil {
+		runtime.waiters.Add(1)
+	}
+	if runtime.invalidations != nil {
+		runtime.waiters.Add(1)
+	}
 	runtime.starting = nil
 	close(starting)
 	runtime.lifecycleMu.Unlock()
 
 	if runtime.refreshInterval > 0 || runtime.invalidations != nil {
-		runtime.waiters.Add(1)
 		go runtime.runRefreshLoop(runCtx)
 	}
 	if runtime.invalidations != nil {
-		runtime.waiters.Add(1)
 		go runtime.runWatchLoop(runCtx)
 	}
 	go func() {
@@ -643,9 +647,14 @@ func (runtime *Runtime) finishStarting(starting chan struct{}, started bool) {
 	runtime.lifecycleMu.Unlock()
 }
 
-// Close cancels watcher, reconnect, periodic refresh, and in-flight background
-// refresh work, then waits for every owned goroutine to drain.
-func (runtime *Runtime) Close(ctx context.Context) error {
+// Shutdown cancels watcher, reconnect, periodic refresh, and in-flight
+// background refresh work, then waits for every owned goroutine to drain. It
+// is safe to call concurrently or repeatedly. Each caller's context bounds
+// only that caller's wait after shutdown begins; cancellation continues after
+// a caller stops waiting. If the context ends while Start is still in progress,
+// Shutdown returns without initiating shutdown and a later call is required.
+// After the complete drain, Shutdown returns nil regardless of context state.
+func (runtime *Runtime) Shutdown(ctx context.Context) error {
 	runtime.lifecycleMu.Lock()
 	if starting := runtime.starting; starting != nil {
 		runtime.lifecycleMu.Unlock()
@@ -653,13 +662,17 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-starting:
-			return runtime.Close(ctx)
+			return runtime.Shutdown(ctx)
 		}
 	}
 	if !runtime.started {
 		runtime.closed = true
+		stopped := runtime.stopped
 		runtime.lifecycleMu.Unlock()
-		return nil
+		if stopped == nil {
+			return nil
+		}
+		return waitForRuntimeShutdown(ctx, stopped)
 	}
 	runtime.closed = true
 	runtime.started = false
@@ -667,12 +680,29 @@ func (runtime *Runtime) Close(ctx context.Context) error {
 	stopped := runtime.stopped
 	runtime.lifecycleMu.Unlock()
 	cancel()
+	return waitForRuntimeShutdown(ctx, stopped)
+}
+
+func waitForRuntimeShutdown(ctx context.Context, stopped <-chan struct{}) error {
+	select {
+	case <-stopped:
+		return nil
+	default:
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-stopped:
 		return nil
 	}
+}
+
+// Close delegates to Shutdown.
+//
+// Deprecated: use Shutdown. Close retains its context-aware signature for
+// compatibility with v1 consumers.
+func (runtime *Runtime) Close(ctx context.Context) error {
+	return runtime.Shutdown(ctx)
 }
 
 func (runtime *Runtime) runRefreshLoop(ctx context.Context) {

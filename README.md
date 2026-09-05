@@ -31,6 +31,14 @@ result, err := settings.Resolve(ctx, provider, theme,
 The root package has no PostgreSQL or Valkey imports. Applications opt into
 backend dependencies by importing `postgres` or `valkey`.
 
+For a long-lived runtime, call `Start(ctx)` with the process lifetime and
+`Shutdown(ctx)` during termination. Shutdown is repeatable, safe for concurrent
+callers, and waits for package-owned background work within the caller's
+context. A call whose context ends while `Start` is still in progress does not
+initiate shutdown, so the application must call `Shutdown` again. The
+deprecated `Close(ctx)` method remains a compatibility alias; see the
+[migration guidance](docs/migrations.md#runtime-lifecycle).
+
 ## Documentation
 
 - [Quick start](docs/quick-start.md)

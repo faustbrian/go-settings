@@ -90,6 +90,142 @@ func TestRuntimeCloseWaitsForStartupThenShutsDown(t *testing.T) {
 	}
 }
 
+func TestRuntimeShutdownWaitsForStartupThenShutsDown(t *testing.T) {
+	key := settings.NewKey("fleet", "mode", settings.StringCodec{})
+	durable := memory.New()
+	if _, err := settings.Set(t.Context(), durable, settings.Global(), key, "safe", settings.Change{
+		Actor: "operator", Reason: "startup shutdown ordering",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &startupBlockingProvider{
+		Provider: durable, entered: make(chan struct{}), release: make(chan struct{}),
+	}
+	runtime := mustRuntime(t, provider, systemFleetClock{}, key)
+	started := make(chan error, 1)
+	go func() { started <- runtime.Start(context.Background()) }()
+	receiveFleet(t, provider.entered, "startup provider entry")
+	shutdown := make(chan error, 1)
+	go func() { shutdown <- runtime.Shutdown(context.Background()) }()
+	time.Sleep(10 * time.Millisecond)
+	select {
+	case err := <-shutdown:
+		t.Fatalf("shutdown returned before startup completed: %v", err)
+	default:
+	}
+	close(provider.release)
+	if err := receiveFleet(t, started, "startup result"); err != nil {
+		t.Fatal(err)
+	}
+	if err := receiveFleet(t, shutdown, "shutdown after startup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Start(t.Context()); !errors.Is(err, settings.ErrRuntimeClosed) {
+		t.Fatalf("restart after coordinated shutdown = %v", err)
+	}
+}
+
+func TestRuntimeShutdownBeforeStartHasNoDrainToWaitFor(t *testing.T) {
+	key := settings.NewKey("fleet", "mode", settings.StringCodec{})
+	runtime := mustRuntime(t, memory.New(), systemFleetClock{}, key)
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runtime.Shutdown(canceled); err != nil {
+		t.Fatalf("shutdown before start = %v", err)
+	}
+	if err := runtime.Start(t.Context()); !errors.Is(err, settings.ErrRuntimeClosed) {
+		t.Fatalf("start after shutdown = %v", err)
+	}
+}
+
+func TestRuntimeShutdownWaitsForAnActiveConcurrentShutdown(t *testing.T) {
+	key := settings.NewKey("fleet", "mode", settings.StringCodec{})
+	durable := memory.New()
+	if _, err := settings.Set(t.Context(), durable, settings.Global(), key, "safe", settings.Change{
+		Actor: "operator", Reason: "concurrent shutdown",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := &stubbornRefreshProvider{
+		Provider: durable, entered: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+	}
+	runtime, err := settings.NewRuntime(settings.RuntimeConfig{
+		Provider: provider, Chain: settings.Chain(settings.Global()), Definitions: []settings.Definition{key},
+		Provenance: settings.ProvenancePostgreSQL, RefreshTimeout: time.Minute,
+		RefreshInterval: 10 * time.Millisecond,
+		Policies: map[settings.SettingClass]settings.ClassPolicy{
+			settings.ClassStandard: {
+				FreshFor: time.Minute, MaxStaleness: time.Minute,
+				OnUnavailable: settings.FailClosed, OnStale: settings.ServeLastKnownGood,
+				OnExpired: settings.FailClosed,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	receiveFleet(t, provider.entered, "stubborn refresh entry")
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runtime.Shutdown(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("bounded initiating shutdown = %v", err)
+	}
+
+	shutdowns := []chan error{make(chan error, 1), make(chan error, 1)}
+	for _, result := range shutdowns {
+		go func() { result <- runtime.Shutdown(context.Background()) }()
+	}
+	for _, result := range shutdowns {
+		select {
+		case err := <-result:
+			t.Fatalf("concurrent shutdown returned before drain: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	close(provider.release)
+	receiveFleet(t, provider.finished, "stubborn refresh drain")
+	for _, result := range shutdowns {
+		if err := receiveFleet(t, result, "concurrent shutdown result"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runtime.Shutdown(t.Context()); err != nil {
+		t.Fatalf("repeat shutdown = %v", err)
+	}
+}
+
+func TestRuntimeCompletedShutdownIgnoresCanceledWaitContext(t *testing.T) {
+	key := settings.NewKey("fleet", "mode", settings.StringCodec{})
+	for _, test := range []struct {
+		name     string
+		shutdown func(*settings.Runtime, context.Context) error
+	}{
+		{name: "shutdown", shutdown: (*settings.Runtime).Shutdown},
+		{name: "deprecated close", shutdown: (*settings.Runtime).Close},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := mustRuntime(t, memory.New(), systemFleetClock{}, key)
+			if err := runtime.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if err := runtime.Shutdown(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			canceled, cancel := context.WithCancel(context.Background())
+			cancel()
+			for range 100 {
+				if err := test.shutdown(runtime, canceled); err != nil {
+					t.Fatalf("completed %s = %v", test.name, err)
+				}
+			}
+		})
+	}
+}
+
 func TestRuntimeRejectsStaleCachedStateBeforeDurableStartupRefresh(t *testing.T) {
 	key := settings.NewKey("fleet", "generation", settings.IntCodec{})
 	durable := memory.New()

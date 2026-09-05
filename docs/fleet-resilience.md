@@ -71,8 +71,13 @@ the setting-specific safety argument.
 
 The context passed to `Start` owns those background loops. Applications MUST
 derive it from the pod or process lifetime, not from a startup probe or request;
-cancelling it stops periodic reconciliation and invalidation watching. `Close`
-also cancels that lifetime and bounds the drain with its own caller context.
+cancelling it stops periodic reconciliation and invalidation watching.
+`Shutdown` also cancels that lifetime and bounds each caller's wait with its
+own context. Once shutdown begins, a timed-out caller stops waiting but the
+drain continues; concurrent callers wait for that same drain, and completed
+shutdown calls return nil. If a caller's context ends while `Start` is still in
+progress, shutdown is not initiated and the application MUST call `Shutdown`
+again. The deprecated `Close(ctx)` method delegates to `Shutdown(ctx)`.
 
 | Cached snapshot | PostgreSQL or durable provider | Result |
 | --- | --- | --- |
@@ -167,7 +172,7 @@ convergence remains bounded as above.
   degrade according to `Bypass` or `FailClosed`; PostgreSQL remains durable and
   periodic refresh repairs convergence.
 - **Scale-down and SIGTERM:** readiness SHOULD be withdrawn first. The shutdown
-  grace period MUST allow `Close` to cancel and drain watcher, reconnect,
+  grace period MUST allow `Shutdown` to cancel and drain watcher, reconnect,
   debounce, and refresh goroutines. The caller's shutdown context bounds that
   wait.
 - **Abrupt loss:** in-memory and optionally cached state may be lost. A durable

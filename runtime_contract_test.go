@@ -246,7 +246,9 @@ func TestRuntimeLifecycleAndSnapshotCacheFailuresStayObservable(t *testing.T) {
 
 	key := settings.NewKey("fleet", "mode", settings.StringCodec{}, settings.WithDefault("safe"))
 	closed := mustRuntime(t, memory.New(), systemFleetClock{}, key)
-	if err := closed.Close(t.Context()); err != nil {
+	closeContext, cancelClose := context.WithCancel(t.Context())
+	cancelClose()
+	if err := closed.Close(closeContext); err != nil {
 		t.Fatal(err)
 	}
 	if err := closed.Start(t.Context()); !errors.Is(err, settings.ErrRuntimeClosed) {
