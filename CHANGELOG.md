@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-09-09
+
 ### Added
 
 - Add repeatable, concurrency-safe `Runtime.Shutdown(ctx)` as the canonical
