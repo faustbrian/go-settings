@@ -99,8 +99,8 @@ shown here.
 ## Required Commands
 
 - `make inventory` validates repository and package manifests.
-- `make check` runs the exact contract for every repository module.
-- `make ci` runs the complete repository contract.
+- `make check` runs the tier-required local gates for the selected modules.
+- `make ci` runs repository checks plus the tier-selected module gates.
 - Local commands and CI MUST use the same scripts and thresholds.
 - Missing tools, services, packages, profiles, mutants, or reports MUST fail
   only when they are required by the applicable assurance tier and changed
