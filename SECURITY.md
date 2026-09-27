@@ -8,10 +8,11 @@ loss, write races, unbounded inputs, audit leakage, and migration replay.
 Applications remain responsible for authorization, key management, network
 security, database access control, and backup encryption.
 
-The default branch prepares an unpublished, release-eligible v2 module for the
-breaking controls described below. Production and owned consumers must remain
-on released v1 until v2 publication and migration gates pass. Do not use a
-local `replace` directive to consume this checkout as v1.
+The published `/v2` v2.0.0 release provides the breaking controls described
+below. The unsuffixed v1 line remains affected by the disclosed vulnerabilities.
+Applications must complete the schema, sensitivity and namespace migration
+before deploying v2 writers; publication is not application rollout proof.
+Do not use a local `replace` directive to consume this checkout as v1.
 
 ## Assets and trust boundaries
 

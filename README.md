@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
-[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-settings.svg)](https://pkg.go.dev/github.com/faustbrian/go-settings)
+[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-settings/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-settings/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-settings?sort=semver)](https://github.com/faustbrian/go-settings/releases)
 [![Go](https://img.shields.io/badge/go-1.27.0-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,21 +19,21 @@ Settings are application data. They are not process boot configuration,
 feature flags, authorization decisions, a secrets manager, or a business-rule
 engine. See [the comparison](docs/comparison.md) before adopting the package.
 
-The published module is the stable
-`github.com/faustbrian/go-settings` v1 line. This source tree prepares the
-unpublished `github.com/faustbrian/go-settings/v2` module for breaking security
-hardening. Version 2 is active release-eligible source, but is not publicly
-available until the reviewed main source passes required CI and `v2.0.0` is
-published. Clean public consumers are verified after publication. Production
-and owned consumers must remain on released v1 without local `replace`
-directives until publication and their schema and namespace rollout is complete.
+The published security upgrade is
+`github.com/faustbrian/go-settings/v2` v2.0.0, requiring Go 1.27. Source remains
+at the repository root on main; Git tags select versions. The unsuffixed v1
+line remains affected by the disclosed cache and audit vulnerabilities.
+Public availability does not establish an application's migration: complete
+the [schema, sensitivity and namespace rollout](docs/migrations.md#security-hardening-upgrade)
+before deploying v2 writers. Do not substitute this checkout for v1 with a
+local `replace` directive.
 
 ## Install
 
-Install the released v1 module:
+Install the released v2 module and use `/v2` imports:
 
 ```sh
-go get github.com/faustbrian/go-settings@v1
+go get github.com/faustbrian/go-settings/v2@v2.0.0
 ```
 
 ```go
@@ -73,7 +73,7 @@ deprecated `Close(ctx)` method remains a compatibility alias; see the
 - [Testing and local commands](docs/testing.md)
 - [Benchmark baseline](docs/benchmarks.md)
 
-Requires Go 1.26+, PostgreSQL 16 or 17 for durability, and Valkey 9 when
+Requires Go 1.27+, PostgreSQL 16 or 17 for durability, and Valkey 9 when
 caching is enabled. Licensed under the [MIT License](LICENSE).
 
 For ecosystem-wide selection and ownership guidance, see the versioned
