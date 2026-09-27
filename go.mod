@@ -3,7 +3,7 @@ module github.com/faustbrian/go-settings/v2
 go 1.27.0
 
 require (
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pashagolub/pgxmock/v4 v4.9.0
 	github.com/valkey-io/valkey-go v1.0.76
 	github.com/valkey-io/valkey-go/mock v1.0.76
