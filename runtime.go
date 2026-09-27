@@ -740,11 +740,10 @@ func (runtime *Runtime) runRefreshLoop(ctx context.Context) {
 
 func (runtime *Runtime) runWatchLoop(ctx context.Context) {
 	defer runtime.waiters.Done()
-	watermarks := make(map[snapshotCoordinate]uint64)
 	for {
 		events, errorsOut, err := runtime.invalidations.Watch(ctx, runtime.watchBuffer)
 		if err == nil {
-			runtime.consumeInvalidations(ctx, events, errorsOut, watermarks)
+			runtime.consumeInvalidations(ctx, events, errorsOut)
 		}
 		if ctx.Err() != nil {
 			return
@@ -755,31 +754,37 @@ func (runtime *Runtime) runWatchLoop(ctx context.Context) {
 	}
 }
 
-func (runtime *Runtime) consumeInvalidations(ctx context.Context, events <-chan Invalidation, errorsOut <-chan error, watermarks map[snapshotCoordinate]uint64) {
+func (runtime *Runtime) consumeInvalidations(ctx context.Context, events <-chan Invalidation, errorsOut <-chan error) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-errorsOut:
+		case err, ok := <-errorsOut:
 			if !ok {
 				return
 			}
-			return
+			if err != nil {
+				runtime.requestRefresh()
+			}
 		case event, ok := <-events:
 			if !ok {
 				return
 			}
-			if runtime.acceptInvalidation(event, watermarks) {
-				select {
-				case runtime.triggers <- struct{}{}:
-				default:
-				}
+			if runtime.acceptInvalidation(event) {
+				runtime.requestRefresh()
 			}
 		}
 	}
 }
 
-func (runtime *Runtime) acceptInvalidation(event Invalidation, watermarks map[snapshotCoordinate]uint64) bool {
+func (runtime *Runtime) requestRefresh() {
+	select {
+	case runtime.triggers <- struct{}{}:
+	default:
+	}
+}
+
+func (runtime *Runtime) acceptInvalidation(event Invalidation) bool {
 	if event.ProtocolVersion != InvalidationProtocolVersion {
 		return true
 	}
@@ -796,10 +801,11 @@ func (runtime *Runtime) acceptInvalidation(event Invalidation, watermarks map[sn
 		return true
 	}
 	coordinate := snapshotCoordinate{scope: event.Scope, key: event.Key}
-	if event.Version <= watermarks[coordinate] {
-		return false
+	if current := runtime.state.Load(); current != nil {
+		if record, ok := current.snapshot.records[coordinate]; ok && record.Version >= event.Version {
+			return false
+		}
 	}
-	watermarks[coordinate] = event.Version
 	return true
 }
 

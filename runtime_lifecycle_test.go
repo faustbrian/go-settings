@@ -2,12 +2,13 @@ package settings_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/memory"
+	"github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/memory"
 )
 
 func TestRuntimeConvergesAcrossInvalidationLossReorderingAndMixedVersions(t *testing.T) {
@@ -86,6 +87,40 @@ func TestRuntimeConvergesAcrossInvalidationLossReorderingAndMixedVersions(t *tes
 	source.waitForSubscriptions(t, 2)
 	if err := runtime.Close(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRuntimeWatcherErrorsReconcileWithoutResubscribing(t *testing.T) {
+	t.Parallel()
+
+	key := settings.NewKey("fleet", "watch-error", settings.IntCodec{})
+	durable := memory.New()
+	write := func(value int64) {
+		t.Helper()
+		if _, err := settings.Set(t.Context(), durable, settings.Global(), key, value, settings.Change{
+			Actor: "operator", Reason: "watch error reconciliation",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(1)
+	provider := &countingFleetProvider{Provider: durable}
+	source := newFleetInvalidationSource()
+	runtime := mustRuntimeWithSource(t, provider, source, key)
+	if err := runtime.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+	source.waitForSubscriptions(t, 1)
+
+	for _, value := range []int64{2, 3} {
+		write(value)
+		source.sendError(t, errors.New("malformed invalidation"))
+		assertEventuallyGeneration(t, runtime, key, value)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if got := source.subscriptionCount(); got != 1 {
+		t.Fatalf("watch errors created %d subscriptions, want 1", got)
 	}
 }
 
@@ -194,6 +229,22 @@ func (source *fleetInvalidationSource) send(t testing.TB, event settings.Invalid
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out delivering fake invalidation")
 	}
+}
+
+func (source *fleetInvalidationSource) sendError(t testing.TB, err error) {
+	t.Helper()
+	select {
+	case source.errors <- err:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out delivering fake invalidation error")
+	}
+}
+
+func (source *fleetInvalidationSource) subscriptionCount() int {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+
+	return source.subscriptions
 }
 
 func (source *fleetInvalidationSource) disconnect() {

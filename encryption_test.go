@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 )
 
 type xorCipher struct{ key byte }

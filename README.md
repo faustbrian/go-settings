@@ -19,6 +19,23 @@ Settings are application data. They are not process boot configuration,
 feature flags, authorization decisions, a secrets manager, or a business-rule
 engine. See [the comparison](docs/comparison.md) before adopting the package.
 
+The published module is the stable
+`github.com/faustbrian/go-settings` v1 line. This source tree prepares the
+unpublished `github.com/faustbrian/go-settings/v2` module for breaking security
+hardening. Version 2 is active release-eligible source, but is not publicly
+available until the reviewed main source passes required CI and `v2.0.0` is
+published. Clean public consumers are verified after publication. Production
+and owned consumers must remain on released v1 without local `replace`
+directives until publication and their schema and namespace rollout is complete.
+
+## Install
+
+Install the released v1 module:
+
+```sh
+go get github.com/faustbrian/go-settings@v1
+```
+
 ```go
 theme := settings.NewKey("ui", "theme", settings.StringCodec{},
     settings.WithDefault("system"),

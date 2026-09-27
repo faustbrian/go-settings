@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -118,7 +119,12 @@ func TestRuntimeConstructionRejectsDefaultEncodingFailure(t *testing.T) {
 }
 
 func TestRuntimeClassifiesEveryInvalidationBoundary(t *testing.T) {
-	runtime := &Runtime{}
+	runtime := &Runtime{
+		chain: Chain(Global()),
+		definitionsByID: map[string]runtimeDefinitionContract{
+			"fleet/key": {definition: NewKey("fleet", "key", StringCodec{})},
+		},
+	}
 	valid := Invalidation{
 		ProtocolVersion: InvalidationProtocolVersion,
 		Scope:           Global(), Key: "fleet/key", Version: 2, State: StateValue,
@@ -131,24 +137,73 @@ func TestRuntimeClassifiesEveryInvalidationBoundary(t *testing.T) {
 		func() Invalidation { event := valid; event.State = State(255); return event }(),
 	}
 	for index, event := range malformed {
-		if !runtime.acceptInvalidation(event, map[snapshotCoordinate]uint64{}) {
+		if !runtime.acceptInvalidation(event) {
 			t.Errorf("malformed invalidation %d was dropped instead of reconciled", index)
 		}
 	}
 	for _, state := range []State{StateMissing, StateValue, StateCleared} {
 		event := valid
 		event.State = state
-		watermarks := map[snapshotCoordinate]uint64{}
-		if !runtime.acceptInvalidation(event, watermarks) {
+		if !runtime.acceptInvalidation(event) {
 			t.Errorf("valid state %d did not request reconciliation", state)
 		}
-		if runtime.acceptInvalidation(event, watermarks) {
+		runtime.state.Store(&runtimeState{snapshot: Snapshot{records: map[snapshotCoordinate]Record{
+			{scope: event.Scope, key: event.Key}: {Version: event.Version},
+		}}})
+		if runtime.acceptInvalidation(event) {
 			t.Errorf("duplicate state %d invalidation was not dropped", state)
 		}
 		event.Version--
-		if runtime.acceptInvalidation(event, watermarks) {
+		if runtime.acceptInvalidation(event) {
 			t.Errorf("reordered state %d invalidation was not dropped", state)
 		}
+		runtime.state.Store(nil)
+	}
+}
+
+func TestRuntimeUnknownInvalidationsDoNotRetainAttackerControlledCoordinates(t *testing.T) {
+	t.Parallel()
+
+	key := NewKey("fleet", "credential", StringCodec{})
+	runtime := &Runtime{
+		chain: Chain(Global()),
+		definitionsByID: map[string]runtimeDefinitionContract{
+			key.StableID(): {definition: key},
+		},
+	}
+	for index := range 10_000 {
+		event := Invalidation{
+			ProtocolVersion: InvalidationProtocolVersion,
+			Scope:           Global(), Key: fmt.Sprintf("unregistered/%d", index),
+			Version: 1, State: StateValue,
+		}
+		if !runtime.acceptInvalidation(event) {
+			t.Fatalf("unknown coordinate %d did not request reconciliation", index)
+		}
+	}
+}
+
+func TestRuntimeUntrustedFutureInvalidationCannotSuppressLaterChange(t *testing.T) {
+	t.Parallel()
+
+	key := NewKey("fleet", "credential", StringCodec{})
+	runtime := &Runtime{
+		chain: Chain(Global()),
+		definitionsByID: map[string]runtimeDefinitionContract{
+			key.StableID(): {definition: key},
+		},
+	}
+	forged := Invalidation{
+		ProtocolVersion: InvalidationProtocolVersion,
+		Scope:           Global(), Key: key.StableID(), Version: ^uint64(0), State: StateValue,
+	}
+	if !runtime.acceptInvalidation(forged) {
+		t.Fatal("future invalidation did not request reconciliation")
+	}
+	legitimate := forged
+	legitimate.Version = 2
+	if !runtime.acceptInvalidation(legitimate) {
+		t.Fatal("future invalidation suppressed a later legitimate change")
 	}
 }
 

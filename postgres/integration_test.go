@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/postgres"
-	"github.com/faustbrian/go-settings/settingstest"
+	settings "github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/postgres"
+	"github.com/faustbrian/go-settings/v2/settingstest"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

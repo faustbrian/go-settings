@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/memory"
-	cache "github.com/faustbrian/go-settings/valkey"
+	settings "github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/memory"
+	cache "github.com/faustbrian/go-settings/v2/valkey"
 )
 
 type failingDurable struct {
@@ -41,7 +41,7 @@ func TestCacheDurableAndTransportFailureContracts(t *testing.T) {
 	mutation, _ := settings.PrepareSet(settings.Global(), key, "value", nil, change)
 
 	provider := cache.New(failingDurable{Provider: base, getErr: failure, bulkGetErr: failure,
-		applyErr: failure, bulkApplyErr: failure}, transport, cache.Config{ReadPolicy: cache.Strong})
+		applyErr: failure, bulkApplyErr: failure}, transport, cache.Config{Prefix: "durable-failure", ReadPolicy: cache.Strong})
 	if _, _, err := provider.Get(t.Context(), settings.Global(), key.StableID()); err == nil {
 		t.Fatal("durable get error hidden")
 	}
@@ -57,7 +57,7 @@ func TestCacheDurableAndTransportFailureContracts(t *testing.T) {
 
 	transport.getErr = failure
 	failClosed := cache.New(base, transport, cache.Config{
-		ReadPolicy: cache.BoundedStale, OutagePolicy: cache.FailClosed,
+		Prefix: "cache-failure", ReadPolicy: cache.BoundedStale, OutagePolicy: cache.FailClosed,
 	})
 	if _, _, err := failClosed.Get(t.Context(), settings.Global(), key.StableID()); err == nil {
 		t.Fatal("fail-closed cache get error hidden")
@@ -141,7 +141,7 @@ func TestWatchClosesWhenTransportChannelsClose(t *testing.T) {
 	t.Parallel()
 
 	messageTransport := newFakeTransport()
-	messageProvider := cache.New(memory.New(), messageTransport, cache.Config{})
+	messageProvider := cache.New(memory.New(), messageTransport, cache.Config{Prefix: "message-close"})
 	events, _, err := messageProvider.Watch(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestWatchClosesWhenTransportChannelsClose(t *testing.T) {
 	}
 
 	errorTransport := newFakeTransport()
-	errorProvider := cache.New(memory.New(), errorTransport, cache.Config{})
+	errorProvider := cache.New(memory.New(), errorTransport, cache.Config{Prefix: "error-close"})
 	events, _, err = errorProvider.Watch(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)

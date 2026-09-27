@@ -1,4 +1,4 @@
-module github.com/faustbrian/go-settings
+module github.com/faustbrian/go-settings/v2
 
 go 1.27.0
 

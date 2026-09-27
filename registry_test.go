@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 )
 
 func TestRegistryRejectsDuplicateStableKey(t *testing.T) {

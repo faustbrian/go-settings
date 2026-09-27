@@ -8,11 +8,15 @@ CREATE TABLE IF NOT EXISTS settings_values (
     codec_version integer NOT NULL,
     version bigint NOT NULL,
     updated_at timestamptz NOT NULL,
+    sensitive boolean NOT NULL DEFAULT false,
     PRIMARY KEY (scope_kind, scope_id, key_id),
     CHECK (state IN (0, 1, 2)),
     CHECK (version > 0),
     CHECK (codec_version > 0)
 );
+
+ALTER TABLE settings_values
+    ADD COLUMN IF NOT EXISTS sensitive boolean NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS settings_history (
     id bigserial PRIMARY KEY,
