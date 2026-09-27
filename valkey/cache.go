@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 )
 
 // Transport is the small Valkey contract needed by Cache.
@@ -51,6 +53,8 @@ type Config struct {
 // Event is the shared versioned invalidation hint.
 type Event = settings.Invalidation
 
+var errInvalidInvalidation = errors.New("invalidation payload is invalid")
+
 // CacheError reports a cache-side failure and whether the durable mutation
 // already committed.
 type CacheError struct {
@@ -70,14 +74,13 @@ type Cache struct {
 	transport Transport
 	config    Config
 	channel   string
+	configErr error
 }
 
-// New constructs a cache. Empty prefixes and non-positive TTLs are replaced
-// with deployment-safe defaults; BoundedStale is the default read policy.
+// New constructs a cache. Prefix must identify one deployment; an invalid
+// configuration makes all provider operations fail closed.
 func New(durable settings.Provider, transport Transport, config Config) *Cache {
-	if config.Prefix == "" {
-		config.Prefix = "settings"
-	}
+	configErr := validateConfig(config)
 	if config.TTL <= 0 {
 		config.TTL = time.Minute
 	}
@@ -86,8 +89,18 @@ func New(durable settings.Provider, transport Transport, config Config) *Cache {
 	}
 	return &Cache{
 		durable: durable, transport: transport, config: config,
-		channel: config.Prefix + ":invalidate",
+		channel: config.Prefix + ":invalidate", configErr: configErr,
 	}
+}
+
+func validateConfig(config Config) error {
+	if strings.TrimSpace(config.Prefix) == "" {
+		return errors.New("settings valkey: deployment-unique namespace is required")
+	}
+	if len(config.Prefix) > 255 || strings.IndexFunc(config.Prefix, unicode.IsControl) >= 0 {
+		return errors.New("settings valkey: namespace must be at most 255 bytes without control characters")
+	}
+	return nil
 }
 
 func (cache *Cache) Capabilities() settings.Capabilities {
@@ -97,6 +110,9 @@ func (cache *Cache) Capabilities() settings.Capabilities {
 }
 
 func (cache *Cache) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
+	if cache.configErr != nil {
+		return settings.Record{}, false, cache.configErr
+	}
 	if cache.config.ReadPolicy == BoundedStale {
 		data, ok, err := cache.transport.Get(ctx, cache.key(scope, key))
 		if err == nil {
@@ -128,6 +144,9 @@ func (cache *Cache) Get(ctx context.Context, scope settings.Scope, key string) (
 // BulkGet always uses the durable provider's snapshot-capable bulk operation,
 // then refreshes cache entries. This avoids mixing versions in snapshots.
 func (cache *Cache) BulkGet(ctx context.Context, scopes []settings.Scope, keys []string) ([]settings.Record, error) {
+	if cache.configErr != nil {
+		return nil, cache.configErr
+	}
 	records, err := cache.durable.BulkGet(ctx, scopes, keys)
 	if err != nil {
 		return nil, err
@@ -143,6 +162,9 @@ func (cache *Cache) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 }
 
 func (cache *Cache) Apply(ctx context.Context, mutation settings.Mutation) (settings.Record, error) {
+	if cache.configErr != nil {
+		return settings.Record{}, cache.configErr
+	}
 	record, err := cache.durable.Apply(ctx, mutation)
 	if err != nil {
 		return settings.Record{}, err
@@ -154,6 +176,9 @@ func (cache *Cache) Apply(ctx context.Context, mutation settings.Mutation) (sett
 }
 
 func (cache *Cache) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
+	if cache.configErr != nil {
+		return nil, cache.configErr
+	}
 	records, err := cache.durable.BulkApply(ctx, mutations)
 	if err != nil {
 		return nil, err
@@ -225,12 +250,18 @@ func (cache *Cache) key(scope settings.Scope, key string) string {
 }
 
 func (cache *Cache) History(ctx context.Context, query settings.HistoryQuery) ([]settings.ChangeRecord, error) {
+	if cache.configErr != nil {
+		return nil, cache.configErr
+	}
 	return cache.durable.History(ctx, query)
 }
 
 // Watch subscribes to bounded, cancellable, at-most-once invalidations. When
 // the buffer is full, the oldest queued event is replaced by the newest.
 func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan error, error) {
+	if cache.configErr != nil {
+		return nil, nil, cache.configErr
+	}
 	if buffer < 1 {
 		return nil, nil, fmt.Errorf("settings valkey: watcher buffer must be between 1 and 10000")
 	}
@@ -263,9 +294,17 @@ func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan
 					return
 				}
 				var event Event
-				if err := json.Unmarshal(message, &event); err != nil {
+				var decodeErr error
+				if len(message) > 4<<10 {
+					decodeErr = errors.New("invalidation message exceeds 4 KiB")
+				} else {
+					if err := json.Unmarshal(message, &event); err != nil {
+						decodeErr = errInvalidInvalidation
+					}
+				}
+				if decodeErr != nil {
 					select {
-					case errorsOut <- fmt.Errorf("settings valkey decode invalidation: %w", err):
+					case errorsOut <- &CacheError{Operation: "decode invalidation", Err: decodeErr}:
 					default:
 					}
 				} else {

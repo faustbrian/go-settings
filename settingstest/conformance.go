@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 )
 
 // Factory returns an isolated provider for one conformance test.
@@ -68,6 +68,31 @@ func RunProvider(t *testing.T, factory Factory) {
 		mutation.Change = settings.Change{}
 		if _, err := provider.Apply(t.Context(), mutation); !errors.Is(err, settings.ErrInvalidChange) {
 			t.Fatalf("missing change error = %v, want ErrInvalidChange", err)
+		}
+	})
+
+	t.Run("sensitivity cannot be downgraded", func(t *testing.T) {
+		provider := factory(t)
+		mutation := validMutation()
+		mutation.Sensitive = true
+		if _, err := provider.Apply(t.Context(), mutation); err != nil {
+			t.Fatalf("sensitive apply: %v", err)
+		}
+		mutation.Sensitive = false
+		mutation.Data = []byte("replacement")
+		if _, err := provider.Apply(t.Context(), mutation); err != nil {
+			t.Fatalf("downgrade apply: %v", err)
+		}
+		history, err := provider.History(t.Context(), settings.HistoryQuery{
+			Scope: mutation.Scope, Key: mutation.Key, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("history: %v", err)
+		}
+		if len(history) != 1 || !history[0].Before.Redacted ||
+			!history[0].After.Redacted || len(history[0].Before.Data) != 0 ||
+			len(history[0].After.Data) != 0 {
+			t.Fatalf("downgraded sensitivity history = %#v", history)
 		}
 	})
 

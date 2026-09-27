@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/faustbrian/go-settings/postgres"
+	"github.com/faustbrian/go-settings/v2/postgres"
 )
 
 func TestSchemaOwnsVersionedValuesAndImmutableHistory(t *testing.T) {

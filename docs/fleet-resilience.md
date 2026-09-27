@@ -105,12 +105,15 @@ including retries, is bounded by `RefreshTimeout`. Periodic refresh, startup
 jitter, invalidation debounce, watcher buffers, and reconnect waits all have
 validated upper bounds and stop with their owning context.
 
-Invalidations are versioned, data-free, at-most-once hints. A valid newer hint
-advances the process-local watermark and requests a durable refresh. Duplicate
-and reordered versions are dropped. Invalid envelopes and unknown protocol
-versions request a full durable refresh, which makes mixed-version rollouts
-safe. A closed or failed subscription reconnects after bounded jitter. A lost
-hint is repaired by periodic refresh.
+Invalidations are versioned, data-free, at-most-once hints. A hint newer than
+the immutable last-known-good snapshot requests a durable refresh; duplicate
+and reordered versions already represented by that snapshot are dropped.
+Untrusted hint versions are never retained as process-local authority, so a
+forged future version cannot suppress a later legitimate change. Invalid
+envelopes and unknown protocol versions request a full durable refresh, which
+keeps mixed invalidation protocol versions convergent. This does not permit v1
+and v2 database writers to overlap. A closed or failed subscription reconnects
+after bounded jitter. A lost hint is repaired by periodic refresh.
 
 For a healthy dependency path, the observable remote-pod convergence window is
 bounded by:

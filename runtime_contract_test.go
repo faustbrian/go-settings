@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/memory"
+	"github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/memory"
 )
 
 func TestRuntimeRejectsEveryUnboundedOrImplicitPolicyDimension(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -55,36 +55,38 @@ func (*Store) Capabilities() settings.Capabilities {
 }
 
 func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
-	return get(ctx, store.db, scope, key, false, false)
+	record, present, _, err := get(ctx, store.db, scope, key, false, false)
+	return record, present, err
 }
 
-func get(ctx context.Context, db querier, scope settings.Scope, key string, lock, includeMissing bool) (settings.Record, bool, error) {
+func get(ctx context.Context, db querier, scope settings.Scope, key string, lock, includeMissing bool) (settings.Record, bool, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return settings.Record{}, false, err
+		return settings.Record{}, false, false, err
 	}
-	query := `SELECT state, value, codec_id, codec_version, version, updated_at
+	query := `SELECT state, value, codec_id, codec_version, version, updated_at, sensitive
 FROM settings_values
 WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3`
 	if lock {
 		query += " FOR UPDATE"
 	}
 	var record settings.Record
+	var sensitive bool
 	record.Scope = scope
 	record.Key = key
 	err := db.QueryRow(ctx, query, scope.Kind, scope.ID, key).Scan(
 		&record.State, &record.Data, &record.CodecID, &record.CodecVersion,
-		&record.Version, &record.UpdatedAt,
+		&record.Version, &record.UpdatedAt, &sensitive,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return settings.Record{}, false, nil
+		return settings.Record{}, false, false, nil
 	}
 	if err != nil {
-		return settings.Record{}, false, fmt.Errorf("settings postgres get: %w", err)
+		return settings.Record{}, false, false, fmt.Errorf("settings postgres get: %w", err)
 	}
 	if record.State == settings.StateMissing && !includeMissing {
-		return settings.Record{}, false, nil
+		return settings.Record{}, false, sensitive, nil
 	}
-	return record, true, nil
+	return record, true, sensitive, nil
 }
 
 func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys []string) ([]settings.Record, error) {
@@ -96,7 +98,7 @@ func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	records := make([]settings.Record, 0, len(scopes)*len(keys))
 	for _, scope := range scopes {
 		for _, key := range keys {
-			record, ok, getErr := get(ctx, tx, scope, key, false, true)
+			record, ok, _, getErr := get(ctx, tx, scope, key, false, true)
 			if getErr != nil {
 				return nil, getErr
 			}
@@ -158,7 +160,7 @@ func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation
 }
 
 func apply(ctx context.Context, tx pgx.Tx, mutation settings.Mutation) (settings.Record, error) {
-	before, present, err := get(ctx, tx, mutation.Scope, mutation.Key, true, false)
+	before, present, storedSensitive, err := get(ctx, tx, mutation.Scope, mutation.Key, true, false)
 	if err != nil {
 		return settings.Record{}, err
 	}
@@ -167,15 +169,16 @@ func apply(ctx context.Context, tx pgx.Tx, mutation settings.Mutation) (settings
 		currentVersion = before.Version
 	} else {
 		var storedVersion uint64
-		err := tx.QueryRow(ctx, `SELECT version FROM settings_values
+		err := tx.QueryRow(ctx, `SELECT version, sensitive FROM settings_values
 WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3 FOR UPDATE`,
-			mutation.Scope.Kind, mutation.Scope.ID, mutation.Key).Scan(&storedVersion)
+			mutation.Scope.Kind, mutation.Scope.ID, mutation.Key).Scan(&storedVersion, &storedSensitive)
 		if err == nil {
 			currentVersion = storedVersion
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return settings.Record{}, fmt.Errorf("settings postgres read version: %w", err)
 		}
 	}
+	effectiveSensitive := storedSensitive || mutation.Sensitive
 	if mutation.ExpectedVersion != nil && currentVersion != *mutation.ExpectedVersion {
 		return settings.Record{}, fmt.Errorf("%w: %s at %s", settings.ErrConflict, mutation.Key, mutation.Scope)
 	}
@@ -197,18 +200,19 @@ WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3 FOR UPDATE`,
 		after.State = settings.StateMissing
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO settings_values
-(scope_kind, scope_id, key_id, state, value, codec_id, codec_version, version, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+	(scope_kind, scope_id, key_id, state, value, codec_id, codec_version, version, updated_at, sensitive)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 ON CONFLICT (scope_kind, scope_id, key_id) DO UPDATE SET
 state=EXCLUDED.state, value=EXCLUDED.value, codec_id=EXCLUDED.codec_id,
-codec_version=EXCLUDED.codec_version, version=EXCLUDED.version, updated_at=EXCLUDED.updated_at`,
+codec_version=EXCLUDED.codec_version, version=EXCLUDED.version, updated_at=EXCLUDED.updated_at,
+sensitive=settings_values.sensitive OR EXCLUDED.sensitive`,
 		after.Scope.Kind, after.Scope.ID, after.Key, after.State, nullableData(after),
-		after.CodecID, after.CodecVersion, after.Version, after.UpdatedAt)
+		after.CodecID, after.CodecVersion, after.Version, after.UpdatedAt, effectiveSensitive)
 	if err != nil {
 		return settings.Record{}, fmt.Errorf("settings postgres write value: %w", err)
 	}
-	beforeAudit := auditValue(before, present, mutation.Sensitive)
-	afterAudit := auditValue(after, mutation.Action != settings.ActionInherit, mutation.Sensitive)
+	beforeAudit := auditValue(before, present, effectiveSensitive)
+	afterAudit := auditValue(after, mutation.Action != settings.ActionInherit, effectiveSensitive)
 	_, err = tx.Exec(ctx, `INSERT INTO settings_history
 (scope_kind,scope_id,key_id,action,version,codec_id,codec_version,
 before_state,before_value,before_redacted,after_state,after_value,after_redacted,

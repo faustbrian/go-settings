@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased
+## [Unreleased] - root v2.0.0
+
+The root source tree now uses the active `/v2` module path because the
+security hardening below changes released v1 behavior and its PostgreSQL read
+schema. Version 2 is release-eligible but unpublished. Existing owned and
+external consumers must remain on released v1 without local `replace`
+directives until the documented publication and migration gates pass.
+
+### Changed
+
+- Require a deployment-unique Valkey namespace instead of sharing the
+  `settings` default, and fail closed on missing or unsafe prefixes.
+- Persist sensitivity monotonically in memory and PostgreSQL providers so
+  direct callers cannot downgrade redaction after a coordinate is classified.
+- Require v1 writers to drain before v2 writes begin; rollback to an unmodified
+  v1 writer is unsafe after v2 persists sensitivity state.
+
+### Fixed
+
+- Reject oversized Valkey invalidations before decoding, retain no
+  attacker-controlled invalidation identities, and prevent forged future
+  versions from suppressing later legitimate reconciliation.
+- Redact hostile invalidation tokens from watcher errors while retaining safe
+  cache-error classification.
+
+### Security
+
+- Prevent cross-deployment cache collisions, invalidation-driven unbounded
+  memory growth, and sensitivity downgrade leakage in new audit records.
 
 ## 1.1.0 - 2026-09-09
 

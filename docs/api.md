@@ -1,7 +1,10 @@
 # API reference
 
-The canonical signature reference is `go doc github.com/faustbrian/go-settings`
-and `go doc` for each subpackage. This page groups the contracts.
+The published signature reference remains
+`go doc github.com/faustbrian/go-settings` for released v1. The current source
+tree is the unpublished, release-eligible `github.com/faustbrian/go-settings/v2`; use
+`go doc` for its root and subpackages only while preparing or reviewing v2.
+This page groups the current source contracts.
 
 `Codec[T]` supplies a stable ID and version plus typed encoding and decoding.
 `Key[T]` adds namespace, stable name, display name, documentation, validation,

@@ -5,14 +5,14 @@
   "modules": [
     {
       "directory": ".",
-      "module_path": "github.com/faustbrian/go-settings",
+      "module_path": "github.com/faustbrian/go-settings/v2",
       "go_version": "1.27.0",
       "packages": [
         {
           "module_directory": ".",
           "directory": ".",
           "name": "settings",
-          "import_path": "github.com/faustbrian/go-settings",
+          "import_path": "github.com/faustbrian/go-settings/v2",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -24,7 +24,7 @@
           "module_directory": ".",
           "directory": "audit",
           "name": "audit",
-          "import_path": "github.com/faustbrian/go-settings/audit",
+          "import_path": "github.com/faustbrian/go-settings/v2/audit",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -36,7 +36,7 @@
           "module_directory": ".",
           "directory": "memory",
           "name": "memory",
-          "import_path": "github.com/faustbrian/go-settings/memory",
+          "import_path": "github.com/faustbrian/go-settings/v2/memory",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -48,7 +48,7 @@
           "module_directory": ".",
           "directory": "migration",
           "name": "migration",
-          "import_path": "github.com/faustbrian/go-settings/migration",
+          "import_path": "github.com/faustbrian/go-settings/v2/migration",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -60,7 +60,7 @@
           "module_directory": ".",
           "directory": "postgres",
           "name": "postgres",
-          "import_path": "github.com/faustbrian/go-settings/postgres",
+          "import_path": "github.com/faustbrian/go-settings/v2/postgres",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -72,7 +72,7 @@
           "module_directory": ".",
           "directory": "settingstest",
           "name": "settingstest",
-          "import_path": "github.com/faustbrian/go-settings/settingstest",
+          "import_path": "github.com/faustbrian/go-settings/v2/settingstest",
           "kind": "test support",
           "production": false,
           "executable": true,
@@ -84,7 +84,7 @@
           "module_directory": ".",
           "directory": "valkey",
           "name": "valkey",
-          "import_path": "github.com/faustbrian/go-settings/valkey",
+          "import_path": "github.com/faustbrian/go-settings/v2/valkey",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -101,7 +101,7 @@
       "family_label": "Persistence And Durability",
       "family_description": "Durable state, delivery, coordination, recovery, and operational lifecycle.",
       "family_order": 4,
-      "version": "1.1.0",
+      "version": "2.0.0",
       "tag_prefix": "v",
       "owned_dependencies": [],
       "reverse_owned_dependencies": [],
@@ -137,16 +137,16 @@
         ],
         "public_package_identifier": "settings",
         "primary_entry_packages": [
-          "github.com/faustbrian/go-settings"
+          "github.com/faustbrian/go-settings/v2"
         ],
         "package_selection": {
-          "github.com/faustbrian/go-settings": "Use for typed runtime settings, precedence, immutable snapshots, optimistic writes, import and export, and explicit runtime convergence.",
-          "github.com/faustbrian/go-settings/audit": "Use to read setting history with definition-aware redaction.",
-          "github.com/faustbrian/go-settings/memory": "Use for a deterministic concurrent in-memory provider in tests or local applications.",
-          "github.com/faustbrian/go-settings/migration": "Use to execute resumable setting-definition migrations against a provider and journal.",
-          "github.com/faustbrian/go-settings/postgres": "Use for durable PostgreSQL settings, history, snapshots, and migration journaling.",
-          "github.com/faustbrian/go-settings/settingstest": "Use to verify custom providers against the shared settings conformance contract.",
-          "github.com/faustbrian/go-settings/valkey": "Use for an optional Valkey cache and invalidation layer in front of durable settings storage."
+          "github.com/faustbrian/go-settings/v2": "Use for typed runtime settings, precedence, immutable snapshots, optimistic writes, import and export, and explicit runtime convergence.",
+          "github.com/faustbrian/go-settings/v2/audit": "Use to read setting history with definition-aware redaction.",
+          "github.com/faustbrian/go-settings/v2/memory": "Use for a deterministic concurrent in-memory provider in tests or local applications.",
+          "github.com/faustbrian/go-settings/v2/migration": "Use to execute resumable setting-definition migrations against a provider and journal.",
+          "github.com/faustbrian/go-settings/v2/postgres": "Use for durable PostgreSQL settings, history, snapshots, and migration journaling.",
+          "github.com/faustbrian/go-settings/v2/settingstest": "Use to verify custom providers against the shared settings conformance contract.",
+          "github.com/faustbrian/go-settings/v2/valkey": "Use for an optional Valkey cache and invalidation layer in front of durable settings storage."
         },
         "lifecycle_status": "active",
         "maturity": "stable",
@@ -172,14 +172,14 @@
         },
         "optional_owned_dependencies": [],
         "adapters": [
-          "github.com/faustbrian/go-settings/memory",
-          "github.com/faustbrian/go-settings/postgres",
-          "github.com/faustbrian/go-settings/valkey"
+          "github.com/faustbrian/go-settings/v2/memory",
+          "github.com/faustbrian/go-settings/v2/postgres",
+          "github.com/faustbrian/go-settings/v2/valkey"
         ],
         "companions": [
-          "github.com/faustbrian/go-settings/audit",
-          "github.com/faustbrian/go-settings/migration",
-          "github.com/faustbrian/go-settings/settingstest"
+          "github.com/faustbrian/go-settings/v2/audit",
+          "github.com/faustbrian/go-settings/v2/migration",
+          "github.com/faustbrian/go-settings/v2/settingstest"
         ],
         "supported_go": {
           "minimum": "1.27.0",
@@ -208,13 +208,13 @@
           "examples": "docs/quick-start.md",
           "faq": "docs/faq.md",
           "changelog": "CHANGELOG.md",
-          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-settings",
+          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-settings/v2",
           "ecosystem_index": "https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md"
         },
         "known_good_compatibility_sets": [],
         "delivery": {
-          "implementation": "not-started",
-          "hardening": "not-started",
+          "implementation": "in-progress",
+          "hardening": "in-progress",
           "release": "not-started"
         }
       },

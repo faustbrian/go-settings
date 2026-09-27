@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/postgres"
-	cache "github.com/faustbrian/go-settings/valkey"
+	"github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/postgres"
+	cache "github.com/faustbrian/go-settings/v2/valkey"
 	"github.com/jackc/pgx/v5/pgxpool"
 	valkeygo "github.com/valkey-io/valkey-go"
 )

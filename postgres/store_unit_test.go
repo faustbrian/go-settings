@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/postgres"
+	settings "github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/postgres"
 	"github.com/jackc/pgx/v5"
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 )
@@ -47,13 +47,13 @@ func TestStoreDatabaseFailureContracts(t *testing.T) {
 	})
 	t.Run("get missing and tombstone", func(t *testing.T) {
 		mock, store := newMockStore(t)
-		columns := []string{"state", "value", "codec_id", "codec_version", "version", "updated_at"}
+		columns := recordColumns()
 		mock.ExpectQuery("missing").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows(columns))
 		if _, ok, err := store.Get(t.Context(), settings.Global(), "missing"); err != nil || ok {
 			t.Fatalf("missing = %v, %v", ok, err)
 		}
 		mock.ExpectQuery("tombstone").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows(columns).AddRow(
-			settings.StateMissing, nil, "string", uint32(1), uint64(1), time.Now()))
+			settings.StateMissing, nil, "string", uint32(1), uint64(1), time.Now(), false))
 		if _, ok, err := store.Get(t.Context(), settings.Global(), "tombstone"); err != nil || ok {
 			t.Fatalf("tombstone = %v, %v", ok, err)
 		}
@@ -93,8 +93,8 @@ func TestStoreDatabaseFailureContracts(t *testing.T) {
 		mock, store := newMockStore(t)
 		mock.ExpectBeginTx(writeOptions())
 		expectMissingRecord(mock)
-		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version"}))
-		mock.ExpectExec("value").WithArgs(anyArgs(9)...).WillReturnError(errDatabase)
+		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}))
+		mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnError(errDatabase)
 		mock.ExpectRollback()
 		if _, err := store.Apply(t.Context(), validPostgresMutation()); err == nil {
 			t.Fatal("value write error hidden")
@@ -113,8 +113,8 @@ func TestStoreDatabaseFailureContracts(t *testing.T) {
 		mock, store := newMockStore(t)
 		mock.ExpectBeginTx(writeOptions())
 		expectMissingRecord(mock)
-		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version"}))
-		mock.ExpectExec("value").WithArgs(anyArgs(9)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}))
+		mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectExec("history").WithArgs(anyArgs(16)...).WillReturnError(errDatabase)
 		mock.ExpectRollback()
 		if _, err := store.Apply(t.Context(), validPostgresMutation()); err == nil {
@@ -125,8 +125,8 @@ func TestStoreDatabaseFailureContracts(t *testing.T) {
 		mock, store := newMockStore(t)
 		mock.ExpectBeginTx(writeOptions())
 		expectMissingRecord(mock)
-		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version"}))
-		mock.ExpectExec("value").WithArgs(anyArgs(9)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}))
+		mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectExec("history").WithArgs(anyArgs(16)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectCommit().WillReturnError(errDatabase)
 		if _, err := store.Apply(t.Context(), validPostgresMutation()); err == nil {
@@ -161,10 +161,10 @@ func TestStoreSuccessfulProviderContractsWithoutExternalServices(t *testing.T) {
 	t.Run("bulk retains tombstone", func(t *testing.T) {
 		mock, store := newMockStore(t)
 		mock.ExpectBeginTx(readOptions())
-		columns := []string{"state", "value", "codec_id", "codec_version", "version", "updated_at"}
+		columns := recordColumns()
 		at := time.Unix(1_800_000_000, 0).UTC()
 		mock.ExpectQuery("snapshot").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows(columns).AddRow(
-			settings.StateMissing, nil, "string", uint32(1), uint64(4), at))
+			settings.StateMissing, nil, "string", uint32(1), uint64(4), at, false))
 		mock.ExpectCommit()
 		records, err := store.BulkGet(t.Context(), []settings.Scope{settings.Global()}, []string{"fleet/key"})
 		if err != nil || len(records) != 1 || records[0].State != settings.StateMissing || records[0].Version != 4 {
@@ -215,8 +215,8 @@ func TestStoreCommitsEveryMutationStateAndPreservesVersions(t *testing.T) {
 			mock, store := newMockStore(t)
 			mock.ExpectBeginTx(writeOptions())
 			expectMissingRecord(mock)
-			mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version"}))
-			mock.ExpectExec("value").WithArgs(anyArgs(9)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+			mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}))
+			mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			mock.ExpectExec("history").WithArgs(anyArgs(16)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			mock.ExpectCommit()
 			mutation := validPostgresMutation()
@@ -234,10 +234,10 @@ func TestStoreCommitsEveryMutationStateAndPreservesVersions(t *testing.T) {
 	t.Run("existing version", func(t *testing.T) {
 		mock, store := newMockStore(t)
 		mock.ExpectBeginTx(writeOptions())
-		columns := []string{"state", "value", "codec_id", "codec_version", "version", "updated_at"}
+		columns := recordColumns()
 		mock.ExpectQuery("record").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows(columns).AddRow(
-			settings.StateValue, []byte("old"), "string", uint32(1), uint64(7), time.Now()))
-		mock.ExpectExec("value").WithArgs(anyArgs(9)...).WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+			settings.StateValue, []byte("old"), "string", uint32(1), uint64(7), time.Now(), false))
+		mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 		mock.ExpectExec("history").WithArgs(anyArgs(16)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectCommit()
 		expected := uint64(7)
@@ -346,7 +346,7 @@ func TestStoreWriteValidationAndVersionFailures(t *testing.T) {
 		mock, nestedStore := newMockStore(t)
 		mock.ExpectBeginTx(writeOptions())
 		expectMissingRecord(mock)
-		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version"}).AddRow(uint64(2)))
+		mock.ExpectQuery("version").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}).AddRow(uint64(2), false))
 		mock.ExpectRollback()
 		expected := uint64(1)
 		mutation.ExpectedVersion = &expected
@@ -369,13 +369,13 @@ func TestStoreUsesLockedReadsAndPersistsEffectiveAuditState(t *testing.T) {
 	})
 	store := postgres.New(mock)
 	mock.ExpectBeginTx(writeOptions())
-	mock.ExpectQuery(`(?s)SELECT state, value, codec_id, codec_version, version, updated_at.*FOR UPDATE`).
+	mock.ExpectQuery(`(?s)SELECT state, value, codec_id, codec_version, version, updated_at, sensitive.*FOR UPDATE`).
 		WithArgs(settings.ScopeGlobal, "", "test/key").
-		WillReturnRows(pgxmock.NewRows([]string{"state", "value", "codec_id", "codec_version", "version", "updated_at"}))
-	mock.ExpectQuery(`(?s)SELECT version FROM settings_values.*FOR UPDATE`).
+		WillReturnRows(pgxmock.NewRows(recordColumns()))
+	mock.ExpectQuery(`(?s)SELECT version, sensitive FROM settings_values.*FOR UPDATE`).
 		WithArgs(settings.ScopeGlobal, "", "test/key").
-		WillReturnRows(pgxmock.NewRows([]string{"version"}))
-	mock.ExpectExec(`INSERT INTO settings_values`).WithArgs(anyArgs(9)...).
+		WillReturnRows(pgxmock.NewRows([]string{"version", "sensitive"}))
+	mock.ExpectExec(`INSERT INTO settings_values`).WithArgs(anyArgs(10)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectExec(`INSERT INTO settings_history`).WithArgs(
 		settings.ScopeGlobal, "", "test/key", settings.ActionSet, uint64(1), "string", uint32(1),
@@ -385,6 +385,31 @@ func TestStoreUsesLockedReadsAndPersistsEffectiveAuditState(t *testing.T) {
 	).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 	if _, err := store.Apply(t.Context(), validPostgresMutation()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStorePreventsSensitivityDowngrade(t *testing.T) {
+	mock, store := newMockStore(t)
+	mock.ExpectBeginTx(writeOptions())
+	mock.ExpectQuery("record").WithArgs(settings.ScopeGlobal, "", "test/key").WillReturnRows(
+		pgxmock.NewRows(recordColumns()).AddRow(
+			settings.StateValue, []byte("secret"), "string", uint32(1), uint64(1), time.Now(), true,
+		),
+	)
+	mock.ExpectExec("value").WithArgs(anyArgs(10)...).WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectExec("history").WithArgs(
+		settings.ScopeGlobal, "", "test/key", settings.ActionSet, uint64(2), "string", uint32(1),
+		settings.StateValue, emptyBytesArgument{}, true,
+		settings.StateValue, emptyBytesArgument{}, true,
+		"test", "unit", pgxmock.AnyArg(),
+	).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	mutation := validPostgresMutation()
+	mutation.Data = []byte("replacement")
+	mutation.Sensitive = false
+	if _, err := store.Apply(t.Context(), mutation); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -434,7 +459,18 @@ func validPostgresMutation() settings.Mutation {
 
 func expectMissingRecord(mock pgxmock.PgxPoolIface) {
 	mock.ExpectQuery("record").WithArgs(anyArgs(3)...).WillReturnRows(pgxmock.NewRows(
-		[]string{"state", "value", "codec_id", "codec_version", "version", "updated_at"}))
+		recordColumns()))
+}
+
+func recordColumns() []string {
+	return []string{"state", "value", "codec_id", "codec_version", "version", "updated_at", "sensitive"}
+}
+
+type emptyBytesArgument struct{}
+
+func (emptyBytesArgument) Match(value any) bool {
+	data, ok := value.([]byte)
+	return ok && len(data) == 0
 }
 
 func readOptions() pgx.TxOptions {

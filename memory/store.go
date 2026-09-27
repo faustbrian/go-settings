@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
+	settings "github.com/faustbrian/go-settings/v2"
 )
 
 type coordinate struct {
@@ -19,11 +19,12 @@ type coordinate struct {
 
 // Store is a deterministic provider for tests and local applications.
 type Store struct {
-	mu       sync.RWMutex
-	records  map[coordinate]settings.Record
-	versions map[coordinate]uint64
-	history  []settings.ChangeRecord
-	now      func() time.Time
+	mu        sync.RWMutex
+	records   map[coordinate]settings.Record
+	versions  map[coordinate]uint64
+	sensitive map[coordinate]bool
+	history   []settings.ChangeRecord
+	now       func() time.Time
 }
 
 // New constructs an empty store using the system clock.
@@ -32,9 +33,10 @@ func New() *Store { return NewWithClock(time.Now) }
 // NewWithClock constructs a deterministic store with a caller-owned clock.
 func NewWithClock(now func() time.Time) *Store {
 	return &Store{
-		records:  make(map[coordinate]settings.Record),
-		versions: make(map[coordinate]uint64),
-		now:      now,
+		records:   make(map[coordinate]settings.Record),
+		versions:  make(map[coordinate]uint64),
+		sensitive: make(map[coordinate]bool),
+		now:       now,
 	}
 }
 
@@ -118,6 +120,8 @@ func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation
 func (store *Store) applyLocked(mutation settings.Mutation) settings.Record {
 	coord := coordinate{scope: mutation.Scope, key: mutation.Key}
 	before, present := store.records[coord]
+	effectiveSensitive := store.sensitive[coord] || mutation.Sensitive
+	store.sensitive[coord] = effectiveSensitive
 	store.versions[coord]++
 	at := mutation.Change.At
 	if at.IsZero() {
@@ -142,8 +146,8 @@ func (store *Store) applyLocked(mutation settings.Mutation) settings.Record {
 	store.history = append(store.history, settings.ChangeRecord{
 		Scope: mutation.Scope, Key: mutation.Key, Action: mutation.Action,
 		Version: after.Version, CodecID: mutation.CodecID, CodecVersion: mutation.CodecVersion,
-		Before: auditValue(before, present, mutation.Sensitive),
-		After:  auditValue(after, mutation.Action != settings.ActionInherit, mutation.Sensitive),
+		Before: auditValue(before, present, effectiveSensitive),
+		After:  auditValue(after, mutation.Action != settings.ActionInherit, effectiveSensitive),
 		Actor:  mutation.Change.Actor, Reason: mutation.Change.Reason, At: at,
 	})
 	return after

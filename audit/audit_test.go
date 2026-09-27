@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/audit"
-	"github.com/faustbrian/go-settings/memory"
+	settings "github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/audit"
+	"github.com/faustbrian/go-settings/v2/memory"
 )
 
 func TestReadRedactsSensitiveHistoryAtThePublicBoundary(t *testing.T) {

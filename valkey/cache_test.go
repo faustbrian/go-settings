@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings"
-	"github.com/faustbrian/go-settings/memory"
-	"github.com/faustbrian/go-settings/settingstest"
-	cache "github.com/faustbrian/go-settings/valkey"
+	settings "github.com/faustbrian/go-settings/v2"
+	"github.com/faustbrian/go-settings/v2/memory"
+	"github.com/faustbrian/go-settings/v2/settingstest"
+	cache "github.com/faustbrian/go-settings/v2/valkey"
 )
 
 type fakeTransport struct {
@@ -36,7 +37,7 @@ func TestCacheNeverRegressesWhenWriteCompletionIsReordered(t *testing.T) {
 		fakeTransport: newFakeTransport(), firstEntered: make(chan struct{}), releaseFirst: make(chan struct{}),
 	}
 	durable := memory.New()
-	provider := cache.New(durable, transport, cache.Config{TTL: time.Minute})
+	provider := cache.New(durable, transport, cache.Config{Prefix: "reordering", TTL: time.Minute})
 	key := settings.NewKey("fleet", "generation", settings.IntCodec{})
 	change := settings.Change{Actor: "operator", Reason: "concurrent rollout"}
 
@@ -96,9 +97,124 @@ func newFakeTransport() *fakeTransport {
 func TestProviderConformance(t *testing.T) {
 	settingstest.RunProvider(t, func(*testing.T) settings.Provider {
 		return cache.New(memory.New(), newFakeTransport(), cache.Config{
-			ReadPolicy: cache.Strong, OutagePolicy: cache.FailClosed,
+			Prefix: "conformance", ReadPolicy: cache.Strong, OutagePolicy: cache.FailClosed,
 		})
 	})
+}
+
+func TestCacheRejectsSharedDefaultNamespaceBeforeCrossDeploymentRead(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	firstDurable := memory.New()
+	secondDurable := memory.New()
+	key := settings.NewKey("shared", "credential", settings.StringCodec{})
+	change := settings.Change{Actor: "operator", Reason: "isolate deployments"}
+	if _, err := settings.Set(t.Context(), firstDurable, settings.Global(), key, "first", change); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.Set(t.Context(), secondDurable, settings.Global(), key, "second", change); err != nil {
+		t.Fatal(err)
+	}
+	first := cache.New(firstDurable, transport, cache.Config{})
+	second := cache.New(secondDurable, transport, cache.Config{})
+	if _, _, err := first.Get(t.Context(), settings.Global(), key.StableID()); err == nil || !strings.Contains(err.Error(), "namespace is required") {
+		t.Fatalf("first cache without namespace error = %v", err)
+	}
+	if _, _, err := second.Get(t.Context(), settings.Global(), key.StableID()); err == nil || !strings.Contains(err.Error(), "namespace is required") {
+		t.Fatalf("second cache without namespace error = %v", err)
+	}
+}
+
+func TestCacheRejectsEveryUnsafeNamespaceBeforeDurableUse(t *testing.T) {
+	t.Parallel()
+
+	for _, prefix := range []string{
+		" ", strings.Repeat("x", 256), "\x00app", "app\x00prod", "app\tprod", "app\nprod", "app\rprod", "app\x7fprod",
+	} {
+		prefix := prefix
+		t.Run(fmt.Sprintf("%q", prefix), func(t *testing.T) {
+			durable := memory.New()
+			provider := cache.New(durable, newFakeTransport(), cache.Config{Prefix: prefix})
+			key := settings.NewKey("namespace", "credential", settings.StringCodec{})
+			mutation, err := settings.PrepareSet(settings.Global(), key, "secret", nil,
+				settings.Change{Actor: "operator", Reason: "reject unsafe namespace"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, _, err := provider.Get(t.Context(), settings.Global(), key.StableID()); err == nil {
+				t.Fatal("get accepted unsafe namespace")
+			}
+			if _, err := provider.BulkGet(t.Context(), []settings.Scope{settings.Global()}, []string{key.StableID()}); err == nil {
+				t.Fatal("bulk get accepted unsafe namespace")
+			}
+			if _, err := provider.Apply(t.Context(), mutation); err == nil {
+				t.Fatal("apply accepted unsafe namespace")
+			}
+			if _, err := provider.BulkApply(t.Context(), []settings.Mutation{mutation}); err == nil {
+				t.Fatal("bulk apply accepted unsafe namespace")
+			}
+			if _, err := provider.History(t.Context(), settings.HistoryQuery{Scope: settings.Global(), Limit: 1}); err == nil {
+				t.Fatal("history accepted unsafe namespace")
+			}
+			if _, _, err := provider.Watch(t.Context(), 1); err == nil {
+				t.Fatal("watch accepted unsafe namespace")
+			}
+			if _, present, err := durable.Get(t.Context(), settings.Global(), key.StableID()); err != nil || present {
+				t.Fatalf("unsafe namespace reached durable provider: present=%v err=%v", present, err)
+			}
+		})
+	}
+}
+
+func TestCacheAcceptsExactNamespaceLimitAndRejectsInvalidWatchBeforeSubscription(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	invalid := cache.New(memory.New(), transport, cache.Config{})
+	if events, errs, err := invalid.Watch(t.Context(), 1); err == nil || events != nil || errs != nil {
+		t.Fatalf("invalid namespace Watch = (%v, %v, %v)", events, errs, err)
+	}
+	transport.mu.Lock()
+	channel := transport.lastChannel
+	transport.mu.Unlock()
+	if channel != "" {
+		t.Fatalf("invalid namespace subscribed to %q", channel)
+	}
+
+	prefix := strings.Repeat("x", 255)
+	provider := cache.New(memory.New(), transport, cache.Config{Prefix: prefix})
+	key := settings.NewKey("boundary", "namespace", settings.StringCodec{})
+	if _, err := settings.Set(t.Context(), provider, settings.Global(), key, "value", settings.Change{
+		Actor: "operator", Reason: "exact namespace limit",
+	}); err != nil {
+		t.Fatalf("255-byte namespace write: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	provider = cache.New(memory.New(), newFakeTransport(), cache.Config{Prefix: prefix})
+	events, errs, err := provider.Watch(ctx, 1)
+	if err != nil {
+		t.Fatalf("255-byte namespace watch: %v", err)
+	}
+	cancel()
+	select {
+	case _, open := <-events:
+		if open {
+			t.Fatal("cancelled watcher delivered an event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled watcher did not close events")
+	}
+	select {
+	case _, open := <-errs:
+		if open {
+			t.Fatal("cancelled watcher delivered an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled watcher did not close errors")
+	}
 }
 
 func (transport *fakeTransport) Get(_ context.Context, key string) ([]byte, bool, error) {
@@ -150,7 +266,7 @@ func (transport *fakeTransport) Publish(_ context.Context, channel string, value
 	return nil
 }
 
-func TestCacheDefaultsAndExplicitConfigurationReachTransport(t *testing.T) {
+func TestCacheTTLDefaultsAndExplicitConfigurationReachTransport(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -159,8 +275,8 @@ func TestCacheDefaultsAndExplicitConfigurationReachTransport(t *testing.T) {
 		wantPrefix string
 		wantTTL    time.Duration
 	}{
-		{name: "zero values", wantPrefix: "settings:value:", wantTTL: time.Minute},
-		{name: "negative ttl", config: cache.Config{TTL: -time.Second}, wantPrefix: "settings:value:", wantTTL: time.Minute},
+		{name: "zero ttl", config: cache.Config{Prefix: "defaults"}, wantPrefix: "defaults:value:", wantTTL: time.Minute},
+		{name: "negative ttl", config: cache.Config{Prefix: "defaults", TTL: -time.Second}, wantPrefix: "defaults:value:", wantTTL: time.Minute},
 		{name: "explicit", config: cache.Config{Prefix: "fleet", TTL: time.Millisecond}, wantPrefix: "fleet:value:", wantTTL: time.Millisecond},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,7 +308,7 @@ func TestCacheBypassReturnsDurableDataWhenCacheFillFails(t *testing.T) {
 	}
 	transport := newFakeTransport()
 	transport.setErr = errors.New("cache unavailable")
-	provider := cache.New(durable, transport, cache.Config{OutagePolicy: cache.Bypass})
+	provider := cache.New(durable, transport, cache.Config{Prefix: "bypass", OutagePolicy: cache.Bypass})
 
 	record, ok, err := provider.Get(t.Context(), settings.Global(), key.StableID())
 	if err != nil || !ok || string(record.Data) != "durable" {
@@ -222,13 +338,10 @@ func TestWatchAcceptsExactBoundsAndUsesConfiguredChannel(t *testing.T) {
 			t.Fatalf("buffer %d channel = %q", buffer, channel)
 		}
 		cancel()
-		for range events {
-		}
-		for range errs {
-		}
+		assertWatcherClosed(t, events, errs)
 	}
 	for _, buffer := range []int{0, 10_001} {
-		provider := cache.New(memory.New(), newFakeTransport(), cache.Config{})
+		provider := cache.New(memory.New(), newFakeTransport(), cache.Config{Prefix: "bounds"})
 		if _, _, err := provider.Watch(t.Context(), buffer); err == nil {
 			t.Fatalf("invalid buffer %d accepted", buffer)
 		}
@@ -240,7 +353,7 @@ func TestWatchContinuesAfterMalformedInvalidationAndNeverForwardsNilErrors(t *te
 
 	t.Run("malformed then valid", func(t *testing.T) {
 		transport := newFakeTransport()
-		provider := cache.New(memory.New(), transport, cache.Config{})
+		provider := cache.New(memory.New(), transport, cache.Config{Prefix: "malformed"})
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		events, errs, err := provider.Watch(ctx, 2)
@@ -272,21 +385,102 @@ func TestWatchContinuesAfterMalformedInvalidationAndNeverForwardsNilErrors(t *te
 		}
 	})
 
+	t.Run("hostile numeric token is redacted", func(t *testing.T) {
+		transport := newFakeTransport()
+		provider := cache.New(memory.New(), transport, cache.Config{Prefix: "redacted"})
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		_, errs, err := provider.Watch(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const hostileToken = "1e123456789"
+		transport.messages <- []byte(`{"version":` + hostileToken + `}`)
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Fatal("nil decode error")
+			}
+			var cacheErr *cache.CacheError
+			if !errors.As(err, &cacheErr) || cacheErr.Operation != "decode invalidation" || cacheErr.Committed {
+				t.Fatalf("decode error classification = %#v", err)
+			}
+			if strings.Contains(err.Error(), hostileToken) {
+				t.Fatalf("decode error exposed hostile token: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("decode error not delivered")
+		}
+	})
+
 	t.Run("nil transport error", func(t *testing.T) {
 		transport := newFakeTransport()
-		provider := cache.New(memory.New(), transport, cache.Config{})
+		provider := cache.New(memory.New(), transport, cache.Config{Prefix: "nil-error"})
 		events, errs, err := provider.Watch(t.Context(), 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		transport.subscribeErrors <- nil
-		if _, ok := <-events; ok {
-			t.Fatal("event channel remained open")
-		}
-		if err, ok := <-errs; ok {
-			t.Fatalf("nil transport error was forwarded: %v", err)
-		}
+		assertClosedWatchChannel(t, events)
+		assertClosedWatchChannel(t, errs)
 	})
+}
+
+func TestWatchAcceptsExactInvalidationByteLimit(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	provider := cache.New(memory.New(), transport, cache.Config{Prefix: "exact-bound"})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	events, errs, err := provider.Watch(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := cache.Event{ProtocolVersion: settings.InvalidationProtocolVersion, Scope: settings.Global(), Key: "fleet/key", Version: 7, State: settings.StateValue}
+	encoded, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded = append(encoded, []byte(strings.Repeat(" ", (4<<10)-len(encoded)))...)
+	transport.messages <- encoded
+	select {
+	case got := <-events:
+		if got != want {
+			t.Fatalf("exact-limit event = %+v, want %+v", got, want)
+		}
+	case err := <-errs:
+		t.Fatalf("4096-byte valid invalidation rejected: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("4096-byte valid invalidation not delivered")
+	}
+}
+
+func TestWatchRejectsOversizedInvalidationBeforeDecoding(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	provider := cache.New(memory.New(), transport, cache.Config{Prefix: "bounded"})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	events, errs, err := provider.Watch(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport.messages <- make([]byte, 4<<10+1)
+	select {
+	case err := <-errs:
+		if err == nil || !strings.Contains(err.Error(), "exceeds 4 KiB") {
+			t.Fatalf("oversized invalidation error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("oversized invalidation was not rejected")
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("oversized invalidation forwarded as %+v", event)
+	default:
+	}
 }
 
 func TestCacheStrongBulkHistoryAndFailureContracts(t *testing.T) {
@@ -296,7 +490,7 @@ func TestCacheStrongBulkHistoryAndFailureContracts(t *testing.T) {
 	durable := memory.New()
 	transport := newFakeTransport()
 	provider := cache.New(durable, transport, cache.Config{
-		ReadPolicy: cache.Strong, OutagePolicy: cache.FailClosed,
+		Prefix: "strong", ReadPolicy: cache.Strong, OutagePolicy: cache.FailClosed,
 	})
 	if !provider.Capabilities().Subscriptions {
 		t.Fatal("subscription capability absent")
@@ -384,9 +578,44 @@ func TestCacheRejectsMalformedEntriesAndWatcherInputs(t *testing.T) {
 		t.Fatal("watcher decode error not delivered")
 	}
 	cancel()
-	for range events {
+	assertWatcherClosed(t, events, errs)
+}
+
+func assertWatcherClosed(t testing.TB, events <-chan cache.Event, errs <-chan error) {
+	t.Helper()
+	if events == nil || errs == nil {
+		t.Fatal("successful Watch returned nil channels")
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for events != nil || errs != nil {
+		select {
+		case _, open := <-events:
+			if !open {
+				events = nil
+			}
+		case _, open := <-errs:
+			if !open {
+				errs = nil
+			}
+		case <-timer.C:
+			t.Fatal("watcher did not close channels after cancellation")
+		}
 	}
 }
+
+func assertClosedWatchChannel[T any](t testing.TB, channel <-chan T) {
+	t.Helper()
+	select {
+	case _, open := <-channel:
+		if open {
+			t.Fatal("watch channel delivered a value instead of closing")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch channel did not close")
+	}
+}
+
 func (transport *fakeTransport) Subscribe(_ context.Context, channel string) (<-chan []byte, <-chan error) {
 	transport.mu.Lock()
 	transport.lastChannel = channel
@@ -460,7 +689,5 @@ func TestWatchCoalescesToNewestEvent(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("watch did not deliver")
 	}
-	if _, open := <-events; open {
-		t.Fatal("watch remained open after transport closed")
-	}
+	assertClosedWatchChannel(t, events)
 }
