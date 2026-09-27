@@ -21,7 +21,7 @@ engine. See [the comparison](docs/comparison.md) before adopting the package.
 
 The published security upgrade is
 `github.com/faustbrian/go-settings/v2` v2.0.0, requiring Go 1.27. Source remains
-at the repository root on main; Git tags select versions. The unsuffixed v1
+at the repository root on main; Git tags select versions. The original v1
 line remains affected by the disclosed cache and audit vulnerabilities.
 Public availability does not establish an application's migration: complete
 the [schema, sensitivity and namespace rollout](docs/migrations.md#security-hardening-upgrade)
