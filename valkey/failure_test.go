@@ -120,12 +120,16 @@ func TestCacheMalformedRecordContractsAndTransportWatcherError(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport.subscribeErrors <- errors.New("subscription failed")
-	if err := <-errs; err == nil {
-		t.Fatal("transport watcher error hidden")
+	select {
+	case err := <-errs:
+		if err == nil {
+			t.Fatal("transport watcher error hidden")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport watcher error not delivered")
 	}
 	cancel()
-	for range events {
-	}
+	assertWatcherClosed(t, events, errs)
 }
 
 func setOnlyCacheValue(transport *fakeTransport, data []byte) {
@@ -147,9 +151,7 @@ func TestWatchClosesWhenTransportChannelsClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(messageTransport.messages)
-	if _, open := <-events; open {
-		t.Fatal("events remained open after message transport closed")
-	}
+	assertClosedWatchChannel(t, events)
 
 	errorTransport := newFakeTransport()
 	errorProvider := cache.New(memory.New(), errorTransport, cache.Config{Prefix: "error-close"})
@@ -158,7 +160,5 @@ func TestWatchClosesWhenTransportChannelsClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(errorTransport.subscribeErrors)
-	if _, open := <-events; open {
-		t.Fatal("events remained open after error transport closed")
-	}
+	assertClosedWatchChannel(t, events)
 }

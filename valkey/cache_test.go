@@ -130,7 +130,7 @@ func TestCacheRejectsEveryUnsafeNamespaceBeforeDurableUse(t *testing.T) {
 	t.Parallel()
 
 	for _, prefix := range []string{
-		" ", strings.Repeat("x", 256), "app\x00prod", "app\tprod", "app\nprod", "app\rprod", "app\x7fprod",
+		" ", strings.Repeat("x", 256), "\x00app", "app\x00prod", "app\tprod", "app\nprod", "app\rprod", "app\x7fprod",
 	} {
 		prefix := prefix
 		t.Run(fmt.Sprintf("%q", prefix), func(t *testing.T) {
@@ -165,6 +165,55 @@ func TestCacheRejectsEveryUnsafeNamespaceBeforeDurableUse(t *testing.T) {
 				t.Fatalf("unsafe namespace reached durable provider: present=%v err=%v", present, err)
 			}
 		})
+	}
+}
+
+func TestCacheAcceptsExactNamespaceLimitAndRejectsInvalidWatchBeforeSubscription(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	invalid := cache.New(memory.New(), transport, cache.Config{})
+	if events, errs, err := invalid.Watch(t.Context(), 1); err == nil || events != nil || errs != nil {
+		t.Fatalf("invalid namespace Watch = (%v, %v, %v)", events, errs, err)
+	}
+	transport.mu.Lock()
+	channel := transport.lastChannel
+	transport.mu.Unlock()
+	if channel != "" {
+		t.Fatalf("invalid namespace subscribed to %q", channel)
+	}
+
+	prefix := strings.Repeat("x", 255)
+	provider := cache.New(memory.New(), transport, cache.Config{Prefix: prefix})
+	key := settings.NewKey("boundary", "namespace", settings.StringCodec{})
+	if _, err := settings.Set(t.Context(), provider, settings.Global(), key, "value", settings.Change{
+		Actor: "operator", Reason: "exact namespace limit",
+	}); err != nil {
+		t.Fatalf("255-byte namespace write: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	provider = cache.New(memory.New(), newFakeTransport(), cache.Config{Prefix: prefix})
+	events, errs, err := provider.Watch(ctx, 1)
+	if err != nil {
+		t.Fatalf("255-byte namespace watch: %v", err)
+	}
+	cancel()
+	select {
+	case _, open := <-events:
+		if open {
+			t.Fatal("cancelled watcher delivered an event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled watcher did not close events")
+	}
+	select {
+	case _, open := <-errs:
+		if open {
+			t.Fatal("cancelled watcher delivered an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled watcher did not close errors")
 	}
 }
 
@@ -289,10 +338,7 @@ func TestWatchAcceptsExactBoundsAndUsesConfiguredChannel(t *testing.T) {
 			t.Fatalf("buffer %d channel = %q", buffer, channel)
 		}
 		cancel()
-		for range events {
-		}
-		for range errs {
-		}
+		assertWatcherClosed(t, events, errs)
 	}
 	for _, buffer := range []int{0, 10_001} {
 		provider := cache.New(memory.New(), newFakeTransport(), cache.Config{Prefix: "bounds"})
@@ -375,13 +421,39 @@ func TestWatchContinuesAfterMalformedInvalidationAndNeverForwardsNilErrors(t *te
 			t.Fatal(err)
 		}
 		transport.subscribeErrors <- nil
-		if _, ok := <-events; ok {
-			t.Fatal("event channel remained open")
-		}
-		if err, ok := <-errs; ok {
-			t.Fatalf("nil transport error was forwarded: %v", err)
-		}
+		assertClosedWatchChannel(t, events)
+		assertClosedWatchChannel(t, errs)
 	})
+}
+
+func TestWatchAcceptsExactInvalidationByteLimit(t *testing.T) {
+	t.Parallel()
+
+	transport := newFakeTransport()
+	provider := cache.New(memory.New(), transport, cache.Config{Prefix: "exact-bound"})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	events, errs, err := provider.Watch(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := cache.Event{ProtocolVersion: settings.InvalidationProtocolVersion, Scope: settings.Global(), Key: "fleet/key", Version: 7, State: settings.StateValue}
+	encoded, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded = append(encoded, []byte(strings.Repeat(" ", (4<<10)-len(encoded)))...)
+	transport.messages <- encoded
+	select {
+	case got := <-events:
+		if got != want {
+			t.Fatalf("exact-limit event = %+v, want %+v", got, want)
+		}
+	case err := <-errs:
+		t.Fatalf("4096-byte valid invalidation rejected: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("4096-byte valid invalidation not delivered")
+	}
 }
 
 func TestWatchRejectsOversizedInvalidationBeforeDecoding(t *testing.T) {
@@ -506,9 +578,44 @@ func TestCacheRejectsMalformedEntriesAndWatcherInputs(t *testing.T) {
 		t.Fatal("watcher decode error not delivered")
 	}
 	cancel()
-	for range events {
+	assertWatcherClosed(t, events, errs)
+}
+
+func assertWatcherClosed(t testing.TB, events <-chan cache.Event, errs <-chan error) {
+	t.Helper()
+	if events == nil || errs == nil {
+		t.Fatal("successful Watch returned nil channels")
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for events != nil || errs != nil {
+		select {
+		case _, open := <-events:
+			if !open {
+				events = nil
+			}
+		case _, open := <-errs:
+			if !open {
+				errs = nil
+			}
+		case <-timer.C:
+			t.Fatal("watcher did not close channels after cancellation")
+		}
 	}
 }
+
+func assertClosedWatchChannel[T any](t testing.TB, channel <-chan T) {
+	t.Helper()
+	select {
+	case _, open := <-channel:
+		if open {
+			t.Fatal("watch channel delivered a value instead of closing")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch channel did not close")
+	}
+}
+
 func (transport *fakeTransport) Subscribe(_ context.Context, channel string) (<-chan []byte, <-chan error) {
 	transport.mu.Lock()
 	transport.lastChannel = channel
@@ -582,7 +689,5 @@ func TestWatchCoalescesToNewestEvent(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("watch did not deliver")
 	}
-	if _, open := <-events; open {
-		t.Fatal("watch remained open after transport closed")
-	}
+	assertClosedWatchChannel(t, events)
 }
