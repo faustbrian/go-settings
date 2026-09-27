@@ -213,8 +213,8 @@
         },
         "known_good_compatibility_sets": [],
         "delivery": {
-          "implementation": "complete",
-          "hardening": "complete",
+          "implementation": "in-progress",
+          "hardening": "in-progress",
           "release": "not-started"
         }
       },
