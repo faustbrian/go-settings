@@ -8,6 +8,9 @@ loss, write races, unbounded inputs, audit leakage, and migration replay.
 Applications remain responsible for authorization, key management, network
 security, database access control, and backup encryption.
 
+See the shared
+[severity, triage and coordinated-disclosure process](https://github.com/faustbrian/go-library-tools/blob/25a69b6357457c1660c4fb25a5302c259070b962/docs/ecosystem/security/vulnerability-management.md).
+
 The published `/v2` v2.0.0 release provides the breaking controls described
 below. The unsuffixed v1 line remains affected by the disclosed vulnerabilities.
 Applications must complete the schema, sensitivity and namespace migration
