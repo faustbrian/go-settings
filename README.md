@@ -28,6 +28,10 @@ the [schema, sensitivity and namespace rollout](docs/migrations.md#security-hard
 before deploying v2 writers. Do not substitute this checkout for v1 with a
 local `replace` directive.
 
+CI uses Go 1.27.2 while the module minimum remains Go 1.27.0. Build
+applications with a patched Go release; this CI selection does not patch
+the runtime of already-built applications.
+
 ## Install
 
 Install the released v2 module and use `/v2` imports:

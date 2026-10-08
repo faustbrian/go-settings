@@ -10,6 +10,9 @@ directives until the documented publication and migration gates pass.
 
 ### Changed
 
+- Select Go 1.27.2 for CI to include the crypto/tls fix for GO-2026-6607.
+  The module minimum remains Go 1.27.0; applications must be rebuilt with
+  a patched toolchain to receive the standard-library fix.
 - Adopt pgx v5.11 for the PostgreSQL provider. Custom implementations returning
   `pgx.Rows` must implement its new `TypeMap` method; use a compatible mock
   implementation when testing the exported `postgres.DB` seam.
