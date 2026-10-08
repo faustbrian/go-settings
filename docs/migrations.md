@@ -35,23 +35,26 @@ where historical audit bytes must remain decodable.
 These steps apply to the v2 upgrade, not to released v1. Do not
 point a v1 import at this checkout with a local `replace` directive.
 
-Publication and deployment are separate stages:
+Version 2.0.0 is published and clean public consumer checks have passed.
+Publication and deployment are separate stages. The following deployment
+work remains application-owned:
 
-1. Deliver the reviewed source to main, pass required exact-source CI, and
-   publish `github.com/faustbrian/go-settings/v2` with a `v2.0.0` tag.
-   Then verify actual clean public consumers resolve the release; local
-   source rehearsals do not establish public availability.
-2. Assign every application deployment and environment a unique
+1. Assign every application deployment and environment a unique
    `valkey.Config.Prefix`; v2 no longer accepts the v1 empty-prefix fallback.
-3. Run `postgres.Store.Migrate` before deploying v2 readers or writers so
+2. Run `postgres.Store.Migrate` before deploying v2 readers or writers so
    `settings_values.sensitive` exists. A v2 binary must not read a v1 schema.
-4. Prove each owned consumer resolves released v1 until publication, then move
-   consumers deliberately to `/v2` only after their schema and prefix rollout
-   is complete. Permanent or local `replace` directives are not migration
-   evidence.
+3. Classify pre-existing sensitive coordinates as described below and drain
+   v1 writers before allowing the first v2 write.
+4. Move consumers deliberately to published `/v2` only after their schema and
+   prefix rollout is complete. Permanent or local `replace` directives are
+   not migration evidence.
 
 The schema migration defaults existing coordinates to non-sensitive because
-their classification cannot be reconstructed safely. Assess existing audit
+their classification cannot be reconstructed safely. Direct-provider callers
+must correctly classify each pre-existing sensitive coordinate on its first v2
+mutation, or populate its marker in an application-owned reviewed migration
+before allowing direct writes. Schema migration alone cannot recover v1
+sensitivity classifications. Assess existing audit
 retention separately where secret values may have been written before this
 upgrade. Drain every v1 writer before the first v2 write. After v2 records a
 sensitive coordinate, v1 writers and ordinary rollback are unsafe because v1
