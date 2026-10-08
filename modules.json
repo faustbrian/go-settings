@@ -107,7 +107,7 @@
       "reverse_owned_dependencies": [],
       "external_runtime_dependencies": [
         "github.com/jackc/pgx/v5",
-        "github.com/pashagolub/pgxmock/v4",
+        "github.com/pashagolub/pgxmock/v5",
         "github.com/valkey-io/valkey-go",
         "github.com/valkey-io/valkey-go/mock",
         "go.uber.org/mock"

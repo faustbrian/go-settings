@@ -10,6 +10,9 @@ directives until the documented publication and migration gates pass.
 
 ### Changed
 
+- Adopt pgx v5.11 for the PostgreSQL provider. Custom implementations returning
+  `pgx.Rows` must implement its new `TypeMap` method; use a compatible mock
+  implementation when testing the exported `postgres.DB` seam.
 - Require a deployment-unique Valkey namespace instead of sharing the
   `settings` default, and fail closed on missing or unsafe prefixes.
 - Persist sensitivity monotonically in memory and PostgreSQL providers so

@@ -10,7 +10,7 @@ import (
 	settings "github.com/faustbrian/go-settings/v2"
 	"github.com/faustbrian/go-settings/v2/postgres"
 	"github.com/jackc/pgx/v5"
-	pgxmock "github.com/pashagolub/pgxmock/v4"
+	pgxmock "github.com/pashagolub/pgxmock/v5"
 )
 
 var errDatabase = errors.New("database failure")
