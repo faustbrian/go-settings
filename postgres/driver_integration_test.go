@@ -92,7 +92,7 @@ func TestDriverConcurrentCompareAndSetKeepsHistoryAtomic(t *testing.T) {
 			}
 			var pgError *pgconn.PgError
 			if !errors.Is(result.err, settings.ErrConflict) &&
-				!(errors.As(result.err, &pgError) && pgError.Code == "40001") {
+				(!errors.As(result.err, &pgError) || pgError.Code != "40001") {
 				t.Fatalf("losing write = %v", result.err)
 			}
 		case <-ctx.Done():
