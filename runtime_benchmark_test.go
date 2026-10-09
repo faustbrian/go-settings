@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/memory"
+	"github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/memory"
 )
 
 func BenchmarkRuntimeHotRead(b *testing.B) {

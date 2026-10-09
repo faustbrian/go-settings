@@ -1,10 +1,12 @@
 # API reference
 
-The published signature reference remains
-`go doc github.com/faustbrian/go-settings` for released v1. The current source
-tree is the unpublished, release-eligible `github.com/faustbrian/go-settings/v2`; use
-`go doc` for its root and subpackages only while preparing or reviewing v2.
-This page groups the current source contracts.
+The published signature reference is
+`go doc github.com/faustbrian/go-settings/v2` for released v2.0.0.
+The current source prepares unpublished `github.com/faustbrian/go-settings/v3`;
+use `go doc .` and the local subpackages while reviewing that candidate.
+This page groups its contracts. The PostgreSQL `DB` seam returns pgx 5.11
+rows, so custom implementations must provide `TypeMap() *pgtype.Map`.
+See [migration guidance](migrations.md#postgresql-interface-upgrade).
 
 `Codec[T]` supplies a stable ID and version plus typed encoding and decoding.
 `Key[T]` adds namespace, stable name, display name, documentation, validation,

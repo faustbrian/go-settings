@@ -1,12 +1,33 @@
 # Changelog
 
-## [Unreleased] - root v2.0.0
+## [Unreleased] - root v3.0.0
 
-The root source tree now uses the active `/v2` module path because the
-security hardening below changes released v1 behavior and its PostgreSQL read
-schema. Version 2 is release-eligible but unpublished. Existing owned and
-external consumers must remain on released v1 without local `replace`
-directives until the documented publication and migration gates pass.
+The current source prepares unpublished `/v3` because pgx 5.11 expands the
+`pgx.Rows` interface exposed by `postgres.DB`. Published v2.0.0 remains
+available; do not substitute this candidate through a local `replace`.
+See the v2-to-v3 migration in `docs/migrations.md` before adopting v3 after
+publication. The storage schema is unchanged, and mixed-major applications
+still share one pgx version through Go MVS.
+
+### Changed
+
+- Move the root and subpackage imports to `/v3` for the PostgreSQL interface
+  incompatibility. Custom `pgx.Rows` implementations must implement its new
+  `TypeMap` method; use a compatible mock implementation for `postgres.DB`.
+- Use qualified immutable source tooling in CI to keep mandatory analyzers
+  compatible with patched Go. The checksum-pinned local release is unchanged.
+- Select Go 1.27.2 for CI to include the crypto/tls fix for GO-2026-6607.
+  The module minimum remains Go 1.27.0; applications must be rebuilt with
+  a patched toolchain to receive the standard-library fix.
+- Adopt pgx v5.11 for the PostgreSQL provider. Custom implementations returning
+  `pgx.Rows` must implement its new `TypeMap` method; use a compatible mock
+  implementation when testing the exported `postgres.DB` seam.
+
+## 2.0.0 - 2026-09-27
+
+Published `/v2` introduces the security hardening below relative to v1.
+Complete the documented schema, sensitivity and namespace rollout before
+introducing v2 writers; publication does not establish application migration.
 
 ### Changed
 

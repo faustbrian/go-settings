@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/audit"
+	settings "github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/audit"
 )
 
 type historyReader struct {

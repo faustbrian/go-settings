@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/memory"
+	settings "github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/memory"
 )
 
 type failingStringCodec struct {
