@@ -6,9 +6,9 @@ import (
 	"testing"
 	"testing/quick"
 
-	settings "github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/memory"
-	"github.com/faustbrian/go-settings/v2/migration"
+	settings "github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/memory"
+	"github.com/faustbrian/go-settings/v3/migration"
 )
 
 type versionedStringCodec struct{ version uint32 }

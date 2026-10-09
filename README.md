@@ -28,6 +28,12 @@ the [schema, sensitivity and namespace rollout](docs/migrations.md#security-hard
 before deploying v2 writers. Do not substitute this checkout for v1 with a
 local `replace` directive.
 
+The current source prepares unpublished `/v3` v3.0.0 for pgx 5.11's new
+`pgx.Rows.TypeMap` requirement on custom PostgreSQL implementations.
+Published v2 remains the install target below until v3 is released. See
+the [v2-to-v3 migration](docs/migrations.md#postgresql-interface-upgrade)
+for import, mock and mixed-major dependency considerations.
+
 CI uses Go 1.27.2 while the module minimum remains Go 1.27.0. Build
 applications with a patched Go release; this CI selection does not patch
 the runtime of already-built applications.

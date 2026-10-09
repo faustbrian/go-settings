@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings/v2"
+	settings "github.com/faustbrian/go-settings/v3"
 )
 
 // Factory returns an isolated provider for one conformance test.

@@ -30,6 +30,34 @@ durable completed state, making a crash between value commit and checkpoint
 safe to resume. PostgreSQL implements the journal. Keep old codecs available
 where historical audit bytes must remain decodable.
 
+## PostgreSQL interface upgrade
+
+The current source prepares v3.0.0; it is not yet a published install target.
+Published v2.0.0 exposes pgx 5.10's `Rows` interface through `postgres.DB`.
+pgx 5.11 adds `TypeMap() *pgtype.Map`, so custom rows implementations that
+compiled against v2 need that method. The owned major change makes this
+source incompatibility explicit.
+
+After v3.0.0 is published:
+
+1. Select `github.com/faustbrian/go-settings/v3@v3.0.0` and change root and
+   subpackage imports from `/v2` to `/v3` together. Do not mix settings types
+   from the two module paths or substitute a local `replace` directive.
+2. Implement `TypeMap() *pgtype.Map` on custom `pgx.Rows` values, returning
+   the map used to decode their values. Use compatible `pgxmock/v5` for mock
+   implementations; real `pgxpool.Pool` already supplies the new contract.
+3. Rebuild with a patched Go toolchain. The module minimum remains 1.27.0;
+   development and CI select 1.27.2.
+
+Go MVS selects one pgx version for an application, including applications
+that import both settings majors. Adopting v3 can therefore require updating
+custom rows used elsewhere in that application, including through v2.
+The new owned module path is not upstream dependency isolation.
+
+This upgrade introduces no SQL or storage-schema change. The existing
+v1-to-v2 security prerequisites below still apply to applications that have
+not completed them; v3 does not make an unmodified v1 writer safe.
+
 ## Security hardening upgrade
 
 These steps apply to the v2 upgrade, not to released v1. Do not

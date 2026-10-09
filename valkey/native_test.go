@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	cache "github.com/faustbrian/go-settings/v2/valkey"
+	cache "github.com/faustbrian/go-settings/v3/valkey"
 	valkeygo "github.com/valkey-io/valkey-go"
 	valkeymock "github.com/valkey-io/valkey-go/mock"
 	"go.uber.org/mock/gomock"

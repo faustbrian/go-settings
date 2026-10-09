@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	settings "github.com/faustbrian/go-settings/v2"
+	settings "github.com/faustbrian/go-settings/v3"
 )
 
 // Reader is the history-only provider capability.

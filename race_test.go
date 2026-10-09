@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	settings "github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/memory"
+	settings "github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/memory"
 )
 
 func TestConcurrentRegistriesReadsWritesAndSnapshots(t *testing.T) {

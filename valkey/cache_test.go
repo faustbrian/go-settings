@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	settings "github.com/faustbrian/go-settings/v2"
-	"github.com/faustbrian/go-settings/v2/memory"
-	"github.com/faustbrian/go-settings/v2/settingstest"
-	cache "github.com/faustbrian/go-settings/v2/valkey"
+	settings "github.com/faustbrian/go-settings/v3"
+	"github.com/faustbrian/go-settings/v3/memory"
+	"github.com/faustbrian/go-settings/v3/settingstest"
+	cache "github.com/faustbrian/go-settings/v3/valkey"
 )
 
 type fakeTransport struct {

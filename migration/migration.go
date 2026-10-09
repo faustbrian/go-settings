@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	settings "github.com/faustbrian/go-settings/v2"
+	settings "github.com/faustbrian/go-settings/v3"
 )
 
 // Kind identifies a migration step contract.

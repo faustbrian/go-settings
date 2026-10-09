@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode"
 
-	settings "github.com/faustbrian/go-settings/v2"
+	settings "github.com/faustbrian/go-settings/v3"
 )
 
 // Transport is the small Valkey contract needed by Cache.
