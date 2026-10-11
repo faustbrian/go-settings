@@ -3,7 +3,7 @@
 [![CI](https://github.com/faustbrian/go-settings/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faustbrian/go-settings/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/badge/CodeQL-required-blue)](https://github.com/faustbrian/go-settings/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
-[![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
+[![Mutation](https://img.shields.io/badge/mutation-full%2Frelease-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-settings/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-settings/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-settings?sort=semver)](https://github.com/faustbrian/go-settings/releases)
@@ -65,6 +65,16 @@ context. A call whose context ends while `Start` is still in progress does not
 initiate shutdown, so the application must call `Shutdown` again. The
 deprecated `Close(ctx)` method remains a compatibility alias; see the
 [migration guidance](docs/migrations.md#runtime-lifecycle).
+
+## Development
+
+`make check` and `make ci` use the published tool pinned in `.golib.yaml` for
+bounded verification with PostgreSQL/Valkey fixtures and targeted root
+synchronization/lifecycle races. No test tag is declared. Base-free checks
+run seeds; changed-source CI selects active fuzz smoke. `make check-full`
+retains all explicit full campaigns. Scheduled CI uses the shared bounded
+route. See [contributor verification](CONTRIBUTING.md#verification) for isolated
+tests, installation, private-cache sessions and explicit release rehearsal.
 
 ## Documentation
 

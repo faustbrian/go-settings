@@ -2,8 +2,8 @@
 
 ## Before Editing
 
-1. Read [`AGENTS.md`](AGENTS.md) and the affected module's goals and docs.
-2. Run `make inventory` and the narrow baseline gate for the module.
+1. Read [`AGENTS.md`](AGENTS.md) and the affected package's docs.
+2. Run the affected package's deterministic tests as described below.
 3. Identify owned dependencies and reverse dependants in `modules.json`.
 4. Preserve unrelated work and generated/corpus provenance.
 
@@ -24,7 +24,8 @@ the affected stable decision entries, and complete the Specification Decisions
 section of the pull request template. An unresolved interpretation or stale
 source pin is release-blocking; peer behavior cannot silently select policy.
 
-Required mutation gates must finish with zero surviving viable mutants.
+Selected full/release mutation gates must finish with zero surviving viable
+mutants; mutation is not an ordinary local or pull-request prerequisite.
 
 Do not add package-local workflows, permanent replacements, machine-specific
 paths, bypass flags, broad mutation exclusions, or aggregate quality metrics
@@ -32,21 +33,72 @@ that hide a failing package.
 
 ## Verification
 
-Run during development:
+Use Go 1.27.2 for verification; the module/API minimum remains Go 1.27.0.
+An isolated checkout needs no sibling repositories or coordination goal files.
+Begin with deterministic tests and one active target when its persisted-input
+boundary changes, using a disposable cache for each bounded session:
+
+```bash
+(
+  set -eu
+  GOCACHE="$(mktemp -d)"
+  export GOCACHE
+  trap 'rm -rf "${GOCACHE}"' EXIT
+  GOWORK=off go test ./...
+  GOWORK=off go test . -run '^$' -fuzz '^FuzzRestoreSnapshotFailsClosed$' -fuzztime=2s -timeout=2m
+)
+```
+
+The deterministic command executes fuzz seeds/corpus, not active fuzzing.
+Provider tests skip when `POSTGRES_URL` or `VALKEY_ADDR` is absent; an
+unconfigured direct test run does not qualify durable providers or the
+PostgreSQL/Valkey fleet integration.
+Install the verified public v2.1.1 binary archive for your platform from
+[go-library-tools releases](https://github.com/faustbrian/go-library-tools/releases/tag/v2.1.1),
+checking `checksums.txt` against `.golib.yaml` and the archive against that
+checksum set. Put the extracted `golib` binary on `PATH`; do not build Tools
+from source. CI verifies the same published release while checking out its
+pinned reusable workflow source.
 
 ```bash
 make inventory
 make check
+make ci
+make specification-check
+golib mutation --module . --package .
 ```
 
-Before submitting a repository-wide change:
+Run adjacent Make commands in one disposable-cache session as shown above.
+`make check` and `make ci` run the bounded local contract with declared
+PostgreSQL/Valkey fixtures; they are not Docker- or database-free. No test tag
+is declared. CI also validates repository/cohesion structure and offline
+specification authority. The targeted root race runs once with a two-minute
+timeout: the registry/read/write/snapshot workload exercises synchronization,
+the snapshot characterization preserves a captured value/version across later
+writes, and lifecycle assertions require concurrent startup/close/shutdown to
+join startup and refuse restart after closure. The registry workload does not
+assert business outcomes, and the snapshot characterization uses sequential
+writes; neither alone proves concurrent snapshot coherence.
+Base-free checks run seeds/corpus; changed-source CI selects causal active
+fuzz smoke. Optional mutation is limited to one package, one worker and a
+twenty-minute deadline.
+
+Select full qualification and release rehearsal explicitly:
 
 ```bash
-make ci
+make check-full
+make specification-check-online
+golib api check
+golib release dry-run --module .
 ```
 
-The full scheduled and release gate is `make ci`. Report every unavailable or
-failing command; do not describe partial results as release-ready.
+Full checks retain all five declared fuzz targets at 2s/2m each, the 100x
+root/memory/Valkey benchmark operation and all original module gates. The
+scheduled carrier uses the shared bounded route; scheduling does not itself
+select full qualification. Online specification checking fetches
+authority/errata sources when applicable. Release rehearsal can run locally.
+Report unavailable or failing commands; bounded checks alone do not establish
+release qualification.
 
 ## Adding A Module
 
