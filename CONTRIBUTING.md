@@ -53,8 +53,8 @@ The deterministic command executes fuzz seeds/corpus, not active fuzzing.
 Provider tests skip when `POSTGRES_URL` or `VALKEY_ADDR` is absent; an
 unconfigured direct test run does not qualify durable providers or the
 PostgreSQL/Valkey fleet integration.
-Install the verified public v2.1.1 binary archive for your platform from
-[go-library-tools releases](https://github.com/faustbrian/go-library-tools/releases/tag/v2.1.1),
+Install the verified public v2.1.3 binary archive for your platform from
+[go-library-tools releases](https://github.com/faustbrian/go-library-tools/releases/tag/v2.1.3),
 checking `checksums.txt` against `.golib.yaml` and the archive against that
 checksum set. Put the extracted `golib` binary on `PATH`; do not build Tools
 from source. CI verifies the same published release while checking out its
