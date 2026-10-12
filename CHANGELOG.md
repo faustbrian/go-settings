@@ -11,6 +11,10 @@ still share one pgx version through Go MVS.
 
 ### Changed
 
+- Clarify borrowed defaults/callbacks, provider-specific history and transaction
+  semantics, committed-write errors, snapshot authentication limits and runtime
+  cleanup ownership. Runtime behavior and storage formats are unchanged.
+
 - Move the root and subpackage imports to `/v3` for the PostgreSQL interface
   incompatibility. Custom `pgx.Rows` implementations must implement its new
   `TypeMap` method; use a compatible mock implementation for `postgres.DB`.

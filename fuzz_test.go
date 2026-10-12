@@ -10,6 +10,9 @@ import (
 	"github.com/faustbrian/go-settings/v3/memory"
 )
 
+// FuzzCodecsRejectMalformedPersistedDataWithoutPanicking feeds arbitrary bytes to selected
+// built-in decoders without a harness-wide size cap; it checks panic freedom, not successful
+// round trips.
 func FuzzCodecsRejectMalformedPersistedDataWithoutPanicking(f *testing.F) {
 	for _, seed := range [][]byte{[]byte("true"), []byte("FALSE"), []byte("[\"a\"]"), []byte("{"), nil} {
 		f.Add(seed)
@@ -22,6 +25,8 @@ func FuzzCodecsRejectMalformedPersistedDataWithoutPanicking(f *testing.F) {
 	})
 }
 
+// FuzzScopeIdentifiers checks accepted tenant identifiers preserve exact string identity;
+// rejected IDs are allowed and no harness-wide input cap is imposed.
 func FuzzScopeIdentifiers(f *testing.F) {
 	for _, seed := range []string{"tenant", "", "a\x00b", "line\nbreak"} {
 		f.Add(seed)
@@ -34,6 +39,8 @@ func FuzzScopeIdentifiers(f *testing.F) {
 	})
 }
 
+// FuzzImportDocumentsFailClosed decodes at most 2 MiB of arbitrary JSON and exercises entry
+// validation without panic; this target does not assert rollback after every rejection.
 func FuzzImportDocumentsFailClosed(f *testing.F) {
 	f.Add([]byte(`{"format":"go-settings/export","version":1}`))
 	f.Add([]byte(`{}`))
@@ -55,6 +62,8 @@ func FuzzImportDocumentsFailClosed(f *testing.F) {
 	})
 }
 
+// FuzzResolutionOfMalformedStoredValues feeds at most 1 MiB into raw integer records and
+// exercises resolution without panic or value-bearing diagnostics assertions.
 func FuzzResolutionOfMalformedStoredValues(f *testing.F) {
 	f.Add([]byte("42"))
 	f.Add([]byte("not-an-int"))
@@ -76,6 +85,8 @@ func FuzzResolutionOfMalformedStoredValues(f *testing.F) {
 	})
 }
 
+// FuzzRestoreSnapshotFailsClosed accepts at most 2 MiB of wire input; any accepted document
+// must retain a revision, non-cache origin and the seeded valid value.
 func FuzzRestoreSnapshotFailsClosed(f *testing.F) {
 	key := settings.NewKey("fuzz", "snapshot", settings.StringCodec{})
 	durable := memory.New()

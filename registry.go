@@ -7,7 +7,11 @@ import (
 )
 
 // Registry stores immutable setting definitions and is safe for concurrent
-// registration and lookup.
+// registration and lookup. Construct it with NewRegistry; a zero Registry
+// supports reads but cannot register into its nil maps. Definitions and their
+// codecs/callbacks remain borrowed and must be immutable and concurrency-safe.
+// Definition validation occurs before the map lock; metadata accessors may be
+// invoked under it and must not reenter the registry.
 type Registry struct {
 	mu          sync.RWMutex
 	definitions map[string]Definition
@@ -16,7 +20,9 @@ type Registry struct {
 
 // NamespaceDefinition documents a stable definition namespace.
 type NamespaceDefinition struct {
-	ID            string
+	// ID is the stable namespace identifier, at most 128 bytes without slash or line separators.
+	ID string
+	// Documentation is caller-supplied descriptive text, not a validation or security policy.
 	Documentation string
 }
 
@@ -71,7 +77,7 @@ func (registry *Registry) Register(definition Definition) error {
 	return fmt.Errorf("%w: %s", ErrDuplicateDefinition, definition.StableID())
 }
 
-// Lookup returns a definition by stable ID.
+// Lookup returns the borrowed definition by exact stable ID, without copying it.
 func (registry *Registry) Lookup(stableID string) (Definition, bool) {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()

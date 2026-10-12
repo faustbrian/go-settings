@@ -22,7 +22,10 @@ type snapshotCoordinate struct {
 }
 
 // Snapshot is an immutable point-in-time read view for request and job
-// consistency.
+// consistency of captured encoded records. It copies provider payloads and is
+// safe for concurrent reads, but does not deep-copy arbitrary codec outputs or
+// Key defaults. Zero Snapshot is an empty read view with no valid cache document.
+// Coherence at capture is the backing provider's responsibility.
 type Snapshot struct {
 	records  map[snapshotCoordinate]Record
 	version  string
@@ -33,26 +36,38 @@ type Snapshot struct {
 type Provenance string
 
 const (
-	ProvenanceProvider      Provenance = "provider"
-	ProvenancePostgreSQL    Provenance = "postgresql"
-	ProvenanceValkey        Provenance = "valkey"
+	// ProvenanceProvider labels a generic provider capture.
+	ProvenanceProvider Provenance = "provider"
+	// ProvenancePostgreSQL labels a caller-declared PostgreSQL capture.
+	ProvenancePostgreSQL Provenance = "postgresql"
+	// ProvenanceValkey labels a caller-declared Valkey boundary.
+	ProvenanceValkey Provenance = "valkey"
+	// ProvenanceSnapshotCache labels restored cached state, retaining its Origin.
 	ProvenanceSnapshotCache Provenance = "snapshot-cache"
-	ProvenanceDefaults      Provenance = "defaults"
+	// ProvenanceDefaults labels definition-only fallback.
+	ProvenanceDefaults Provenance = "defaults"
 )
 
 // CaptureOptions records where and when a snapshot was obtained.
 type CaptureOptions struct {
+	// CapturedAt records capture time; capture requires nonzero and normalizes it to UTC.
 	CapturedAt time.Time
+	// Provenance describes the immediate source, not authenticated proof of origin.
 	Provenance Provenance
 }
 
 // SnapshotMetadata describes immutable snapshot identity and freshness.
 type SnapshotMetadata struct {
-	Revision   string
+	// Revision is an unkeyed content identifier, not a signature or freshness guarantee.
+	Revision string
+	// Provenance describes the immediate source, not authenticated proof of origin.
 	Provenance Provenance
-	Origin     Provenance
+	// Origin retains the source provenance across snapshot-cache restoration.
+	Origin Provenance
+	// CapturedAt records capture time; capture requires nonzero and normalizes it to UTC.
 	CapturedAt time.Time
-	Age        time.Duration
+	// Age is nonnegative elapsed time at Metadata evaluation; clock rollback clamps it to zero.
+	Age time.Duration
 }
 
 // Capture reads all requested definitions and owners in one provider bulk
@@ -65,7 +80,10 @@ func Capture(ctx context.Context, provider Provider, chain ResolutionChain, defi
 }
 
 // CaptureWithOptions captures and completely validates a snapshot before it
-// can become observable.
+// can become observable. Metadata/definitions/coordinates and each supplied
+// record are validated; omitted coordinates are treated as absent. The provider
+// must return a coherent complete bulk read. There is no capture-wide allocation
+// cap beyond record validation; callers must bound the coordinate set.
 func CaptureWithOptions(ctx context.Context, provider Provider, chain ResolutionChain, options CaptureOptions, definitions ...Definition) (Snapshot, error) {
 	keys, definitionsByID, err := prepareSnapshot(chain, options, definitions)
 	if err != nil {
@@ -191,7 +209,11 @@ func (snapshot Snapshot) MarshalBinary() ([]byte, error) {
 }
 
 // RestoreSnapshot completely decodes, validates, and revision-checks a cached
-// snapshot before returning it as last-known-good state.
+// snapshot before returning it as last-known-good state. It accepts one strict
+// JSON document of at most 2 MiB and checks current definitions. Revision is an
+// unkeyed checksum, not authentication: freshness timestamps and provenance are
+// not covered by it. Callers must authenticate storage and assess age/policy
+// before activation; a valid document alone is not proof of trusted origin.
 func RestoreSnapshot(data []byte, chain ResolutionChain, definitions ...Definition) (Snapshot, error) {
 	if len(data) == 0 {
 		return Snapshot{}, fmt.Errorf("%w: snapshot cache size", ErrInvalidValue)
@@ -246,6 +268,9 @@ func chainContains(chain ResolutionChain, candidate Scope) bool {
 	return false
 }
 
+// The digest identifies selected coordinates and encoded record content, not
+// freshness or authority. Sorting makes input enumeration order irrelevant;
+// capture timestamps/provenance and chain precedence are not authenticated.
 func snapshotVersion(chain ResolutionChain, keys []string, records []Record) string {
 	parts := make([]string, 0, len(records)+len(keys)+len(chain.scopes))
 	for _, scope := range chain.scopes {
@@ -283,7 +308,10 @@ func ResolveSnapshot[T any](snapshot Snapshot, key Key[T], chain ResolutionChain
 	return Resolve(context.Background(), snapshot, key, chain)
 }
 
+// Capabilities advertises immutable snapshot reads only.
 func (Snapshot) Capabilities() Capabilities { return Capabilities{Snapshots: true} }
+
+// Get returns a copied encoded payload; tombstones return false and zero Snapshot is empty.
 func (snapshot Snapshot) Get(ctx context.Context, scope Scope, key string) (Record, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, false, err
@@ -292,6 +320,9 @@ func (snapshot Snapshot) Get(ctx context.Context, scope Scope, key string) (Reco
 	record.Data = append([]byte(nil), record.Data...)
 	return record, ok && record.State != StateMissing, nil
 }
+
+// BulkGet returns copies in scopes/keys iteration order and omits missing tombstones; empty
+// inputs return no records.
 func (snapshot Snapshot) BulkGet(ctx context.Context, scopes []Scope, keys []string) ([]Record, error) {
 	var records []Record
 	for _, scope := range scopes {
@@ -307,12 +338,18 @@ func (snapshot Snapshot) BulkGet(ctx context.Context, scopes []Scope, keys []str
 	}
 	return records, nil
 }
+
+// Apply always returns ErrUnsupported; captured state cannot be mutated.
 func (Snapshot) Apply(context.Context, Mutation) (Record, error) {
 	return Record{}, ErrUnsupported
 }
+
+// BulkApply always returns ErrUnsupported.
 func (Snapshot) BulkApply(context.Context, []Mutation) ([]Record, error) {
 	return nil, ErrUnsupported
 }
+
+// History always returns ErrUnsupported; snapshots do not retain audit history.
 func (Snapshot) History(context.Context, HistoryQuery) ([]ChangeRecord, error) {
 	return nil, ErrUnsupported
 }

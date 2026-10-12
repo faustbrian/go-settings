@@ -13,49 +13,85 @@ const ExportFormat = "go-settings/export"
 
 // ExportOptions controls schema metadata and sensitive-value handling.
 type ExportOptions struct {
-	Schema           string
-	At               time.Time
+	// Schema is the application-owned schema identity; nonempty for export.
+	Schema string
+	// At sets ExportedAt; zero uses the current UTC time.
+	At time.Time
+	// IncludeSensitive opts into secret-bearing bytes and defaults; callers must protect the
+	// resulting document.
 	IncludeSensitive bool
 }
 
 // DefinitionDescriptor preserves definition and default codec metadata.
 type DefinitionDescriptor struct {
-	StableID      string `json:"stable_id"`
-	Namespace     string `json:"namespace"`
-	Name          string `json:"name"`
-	CodecID       string `json:"codec_id"`
-	CodecVersion  uint32 `json:"codec_version"`
+	// StableID is the stable namespace/name key identity.
+	StableID string `json:"stable_id"`
+	// Namespace is the definition namespace.
+	Namespace string `json:"namespace"`
+	// Name is the definition name within its namespace.
+	Name string `json:"name"`
+	// CodecID identifies the encoding contract.
+	CodecID string `json:"codec_id"`
+	// CodecVersion identifies the encoding contract version.
+	CodecVersion uint32 `json:"codec_version"`
+	// Documentation carries descriptive definition text.
 	Documentation string `json:"documentation,omitempty"`
-	DisplayName   string `json:"display_name,omitempty"`
-	Sensitive     bool   `json:"sensitive,omitempty"`
-	HasDefault    bool   `json:"has_default,omitempty"`
-	Default       []byte `json:"default,omitempty"`
-	Redacted      bool   `json:"redacted,omitempty"`
+	// DisplayName is a changeable human label, not persistence identity.
+	DisplayName string `json:"display_name,omitempty"`
+	// Sensitive records the definition sensitivity classification.
+	Sensitive bool `json:"sensitive,omitempty"`
+	// HasDefault distinguishes no default from an encoded zero or empty default.
+	HasDefault bool `json:"has_default,omitempty"`
+	// Default contains encoded default bytes when not redacted; custom definitions control
+	// buffer ownership.
+	Default []byte `json:"default,omitempty"`
+	// Redacted marks an omitted sensitive default; Import ignores this descriptor.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 // ExportEntry is one owner-scoped persisted value.
 type ExportEntry struct {
-	Scope        Scope  `json:"scope"`
-	Key          string `json:"key"`
-	State        State  `json:"state"`
-	Data         []byte `json:"data,omitempty"`
-	CodecID      string `json:"codec_id"`
+	// Scope identifies the persisted owner, not authorization.
+	Scope Scope `json:"scope"`
+	// Key is the stable key identity.
+	Key string `json:"key"`
+	// State selects value, clear or inherit on import.
+	State State `json:"state"`
+	// Data holds encoded value bytes; export/import copy record payloads.
+	Data []byte `json:"data,omitempty"`
+	// CodecID identifies the encoding contract.
+	CodecID string `json:"codec_id"`
+	// CodecVersion identifies the encoding contract version.
 	CodecVersion uint32 `json:"codec_version"`
-	Version      uint64 `json:"source_version"`
-	Redacted     bool   `json:"redacted,omitempty"`
+	// Version is source provenance only; import does not use it as a CAS precondition.
+	Version uint64 `json:"source_version"`
+	// Redacted marks omitted bytes; redacted entries cannot be imported.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 // ExportDocument is the versioned portable settings format.
 type ExportDocument struct {
-	Format      string                 `json:"format"`
-	Version     uint32                 `json:"version"`
-	Schema      string                 `json:"schema"`
-	ExportedAt  time.Time              `json:"exported_at"`
+	// Format must equal ExportFormat for import.
+	Format string `json:"format"`
+	// Version is the document format version; import accepts 1.
+	Version uint32 `json:"version"`
+	// Schema is the application-owned schema identity; nonempty for export.
+	Schema string `json:"schema"`
+	// ExportedAt records export time; import does not enforce freshness.
+	ExportedAt time.Time `json:"exported_at"`
+	// Definitions are descriptive metadata; Import uses its registry rather than trusting these
+	// descriptors.
 	Definitions []DefinitionDescriptor `json:"definitions"`
-	Entries     []ExportEntry          `json:"entries"`
+	// Entries carry owner-scoped writes; import accepts 1–1000 unique coordinates.
+	Entries []ExportEntry `json:"entries"`
 }
 
-// Export captures an internally consistent portable document.
+// Export builds a portable document using one provider BulkGet for 1–1000
+// coordinates. Coherence depends on the provider; no additional transaction or
+// full record validation is added. Definitions remain in input order; entries
+// are sorted by owner/key. Secret bytes/defaults are omitted unless opted in.
+// The document is not authenticated or encrypted; custom default buffers may
+// remain borrowed and callers own protection of exported data.
 func Export(ctx context.Context, provider Provider, scopes []Scope, definitions []Definition, options ExportOptions) (ExportDocument, error) {
 	if options.Schema == "" {
 		return ExportDocument{}, fmt.Errorf("settings: export schema is required")
@@ -131,12 +167,19 @@ func Export(ctx context.Context, provider Provider, scopes []Scope, definitions 
 
 // ImportOptions controls schema compatibility and change metadata.
 type ImportOptions struct {
+	// ExpectedSchema optionally requires exact schema equality; empty disables this comparison.
 	ExpectedSchema string
-	Atomicity      Atomicity
-	Change         Change
+	// Atomicity selects the provider atomic-bulk requirement; its zero value is RequireAtomic.
+	Atomicity Atomicity
+	// Change supplies fresh actor/reason/timestamp metadata for imported writes.
+	Change Change
 }
 
-// Import validates the whole document before applying any mutation.
+// Import validates all 1–1000 unique entries before applying a provider batch.
+// It uses registry definitions, not document descriptors, and ignores source
+// versions/ExportedAt: these are new unconditional writes with fresh Change
+// metadata. Redacted entries are rejected. Atomicity depends on the selected
+// provider capability; no retry, authentication or authorization is added.
 func Import(ctx context.Context, provider Provider, registry *Registry, document ExportDocument, options ImportOptions) ([]Record, error) {
 	if document.Format != ExportFormat || document.Version != 1 || document.Schema == "" {
 		return nil, fmt.Errorf("settings: unsupported import format")

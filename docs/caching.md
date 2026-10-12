@@ -1,8 +1,10 @@
 # Caching semantics
 
-`BoundedStale` reads Valkey first and bounds staleness by TTL plus invalidation
-delivery. Pub/Sub is at-most-once and messages may be lost, delayed, duplicated,
-or reordered. TTL repairs missed events. `Strong` always reads durable storage.
+`BoundedStale` reads validated Valkey entries first until transport TTL expiry.
+This is not a cluster freshness SLA: a delayed fill can cache an older durable
+read, and `Cache.Watch` supplies hints rather than automatically evicting entries.
+Pub/Sub is lossy and messages may be lost, delayed, duplicated or reordered.
+Consumers reconcile durable state; `Strong` always reads durable storage.
 
 `Config.Prefix` is required and must be unique to the application deployment
 and environment that owns the durable settings data. Construction remains

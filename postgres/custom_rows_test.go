@@ -55,6 +55,8 @@ type customUnexpectedRow struct{}
 
 func (customUnexpectedRow) Scan(...any) error { return errors.New("unexpected QueryRow.Scan") }
 
+// customHistoryRows models the public pgx5.11 Rows seam without a connection,
+// exposing the supplied decoding TypeMap and observable row closure.
 type customHistoryRows struct {
 	typeMap *pgtype.Map
 	closed  bool

@@ -10,6 +10,9 @@ import (
 	cache "github.com/faustbrian/go-settings/v3/valkey"
 )
 
+// BenchmarkCacheInvalidation measures memory-backed writes, cache serialization and
+// invalidation through a fake transport; it excludes network latency and retains growing audit
+// history.
 func BenchmarkCacheInvalidation(b *testing.B) {
 	provider := cache.New(memory.New(), newFakeTransport(), cache.Config{
 		Prefix: "benchmark", TTL: time.Minute,

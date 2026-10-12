@@ -621,6 +621,8 @@ func (provider *cancelAfterReadProvider) BulkGet(ctx context.Context, scopes []s
 	return records, err
 }
 
+// stubbornRefreshProvider deliberately ignores cancellation while blocked. It
+// separates a caller's bounded Shutdown wait from the still-owned drain.
 type stubbornRefreshProvider struct {
 	settings.Provider
 	mu       sync.Mutex

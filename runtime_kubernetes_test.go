@@ -10,6 +10,8 @@ import (
 	"github.com/faustbrian/go-settings/v3/memory"
 )
 
+// This is an in-process replica simulation, not Kubernetes or external-service
+// qualification; one subscriber deliberately loses hints and relies on refresh.
 func TestKubernetesReplicaFleetConvergesAfterLostAndReorderedInvalidations(t *testing.T) {
 	key := settings.NewKey("fleet", "rollout-generation", settings.IntCodec{})
 	durable := memory.New()

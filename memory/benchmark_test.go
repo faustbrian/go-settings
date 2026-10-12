@@ -9,6 +9,8 @@ import (
 	"github.com/faustbrian/go-settings/v3/memory"
 )
 
+// BenchmarkHotRead measures copied payload reads of one seeded global value; seeding is
+// excluded and errors are not separately validated.
 func BenchmarkHotRead(b *testing.B) {
 	provider, key := seededProvider(b)
 	b.ReportAllocs()
@@ -18,6 +20,8 @@ func BenchmarkHotRead(b *testing.B) {
 	}
 }
 
+// BenchmarkColdRead measures three-owner misses followed by a declared default, without
+// external IO; compare with equivalent chain depth/input shape.
 func BenchmarkColdRead(b *testing.B) {
 	provider := memory.New()
 	key := settings.NewKey("benchmark", "missing", settings.StringCodec{}, settings.WithDefault("default"))
@@ -28,6 +32,8 @@ func BenchmarkColdRead(b *testing.B) {
 	}
 }
 
+// BenchmarkResolutionDepth measures four-owner resolution ending at a seeded global value,
+// including payload copy and decode; setup is outside the Loop body.
 func BenchmarkResolutionDepth(b *testing.B) {
 	provider, key := seededProvider(b)
 	chain := settings.Chain(settings.User("user"), settings.Resource("resource"), settings.Tenant("tenant"), settings.Global())
@@ -37,6 +43,8 @@ func BenchmarkResolutionDepth(b *testing.B) {
 	}
 }
 
+// BenchmarkBulkRead100 measures a coherent copied read of 100 global values; seeding is
+// excluded and no external backend is involved.
 func BenchmarkBulkRead100(b *testing.B) {
 	provider := memory.New()
 	keys := make([]string, 100)
@@ -53,6 +61,9 @@ func BenchmarkBulkRead100(b *testing.B) {
 	}
 }
 
+// BenchmarkProviderContention measures parallel audited writes to one memory coordinate,
+// including lock contention and growing retained history; it is not a bounded steady-state
+// backend comparison.
 func BenchmarkProviderContention(b *testing.B) {
 	provider, key := seededProvider(b)
 	change := settings.Change{Actor: "benchmark", Reason: "contention"}

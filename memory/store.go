@@ -1,4 +1,7 @@
-// Package memory provides a deterministic, concurrent in-memory provider.
+// Package memory provides a concurrent, non-durable provider with atomic batches
+// and coherent captures. Use New or NewWithClock. It owns no goroutines or close
+// lifecycle; values, version tombstones, sticky sensitivity and unbounded history
+// live for the Store lifetime. It does not authorize owners or encrypt values.
 package memory
 
 import (
@@ -17,7 +20,10 @@ type coordinate struct {
 	key   string
 }
 
-// Store is a deterministic provider for tests and local applications.
+// Store is a deterministic concurrent provider for tests/local applications.
+// Construct it with New; zero Store cannot write. Returned buffers are copied,
+// including history, and caller inputs must not change during calls. The custom
+// clock runs under the write lock and must not block, panic or reenter Store.
 type Store struct {
 	mu        sync.RWMutex
 	records   map[coordinate]settings.Record
@@ -30,7 +36,8 @@ type Store struct {
 // New constructs an empty store using the system clock.
 func New() *Store { return NewWithClock(time.Now) }
 
-// NewWithClock constructs a deterministic store with a caller-owned clock.
+// NewWithClock constructs a store with a borrowed clock. It must be nonnil and
+// safe under synchronous locked writes; a nil clock panics on zero-time changes.
 func NewWithClock(now func() time.Time) *Store {
 	return &Store{
 		records:   make(map[coordinate]settings.Record),
@@ -40,10 +47,13 @@ func NewWithClock(now func() time.Time) *Store {
 	}
 }
 
+// Capabilities advertises CAS, atomic bulk, history and coherent snapshots; no subscriptions.
 func (*Store) Capabilities() settings.Capabilities {
 	return settings.Capabilities{CompareAndSet: true, AtomicBulk: true, History: true, Snapshots: true}
 }
 
+// Get returns a copied record payload; missing tombstones return false while retaining version
+// metadata. Context is checked before lock acquisition.
 func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return settings.Record{}, false, err
@@ -55,6 +65,8 @@ func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (
 	return record, ok && record.State != settings.StateMissing, nil
 }
 
+// BulkGet copies a coherent Cartesian-product view under one read lock, including missing
+// tombstones. No coordinate-count limit is imposed here.
 func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys []string) ([]settings.Record, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -73,6 +85,7 @@ func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	return records, nil
 }
 
+// Apply performs one validated atomic write through BulkApply.
 func (store *Store) Apply(ctx context.Context, mutation settings.Mutation) (settings.Record, error) {
 	records, err := store.BulkApply(ctx, []settings.Mutation{mutation})
 	if err != nil {
@@ -81,6 +94,8 @@ func (store *Store) Apply(ctx context.Context, mutation settings.Mutation) (sett
 	return records[0], nil
 }
 
+// BulkApply atomically validates/CAS-checks and writes 1–1000 unique coordinates, returning
+// input order. Cancellation is checked before locking, not during the transaction.
 func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -120,6 +135,8 @@ func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation
 func (store *Store) applyLocked(mutation settings.Mutation) settings.Record {
 	coord := coordinate{scope: mutation.Scope, key: mutation.Key}
 	before, present := store.records[coord]
+	// Sensitivity is sticky across inherit/clear, so a later direct writer cannot
+	// downgrade future history. Existing history is not retroactively scrubbed.
 	effectiveSensitive := store.sensitive[coord] || mutation.Sensitive
 	store.sensitive[coord] = effectiveSensitive
 	store.versions[coord]++
@@ -166,6 +183,8 @@ func auditValue(record settings.Record, present, sensitive bool) settings.AuditV
 	return value
 }
 
+// History copies at most 1–1000 matching events: selects newest appended events, then sorts by
+// descending coordinate version, not global timestamp.
 func (store *Store) History(ctx context.Context, query settings.HistoryQuery) ([]settings.ChangeRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

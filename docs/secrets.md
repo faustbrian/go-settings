@@ -2,7 +2,9 @@
 
 Mark secret-bearing keys with `WithSensitive`. Audit history omits their bytes,
 export redacts them unless explicitly opted in, and `audit.Read` applies a
-second redaction boundary.
+second redaction boundary. This affects newly classified writes, not historical
+erasure or value encryption. Typed defaults can retain mutable references;
+actor/reason metadata and custom error text are not automatically sanitized.
 
 `EncryptionCodec` delegates authenticated encryption and all key ownership to
 a caller-supplied `Cipher`. Increment its codec version when the envelope

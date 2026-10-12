@@ -15,7 +15,9 @@ func Set[T any](ctx context.Context, provider Provider, scope Scope, key Key[T],
 }
 
 // CompareAndSet writes only when the current version equals expected. A nil
-// expected version performs an unconditional versioned write.
+// expected version performs an unconditional versioned write. Expected is
+// borrowed for the synchronous provider call; zero requires no prior version,
+// not merely an absent override after an inherit tombstone.
 func CompareAndSet[T any](ctx context.Context, provider Provider, scope Scope, key Key[T], value T, expected *uint64, change Change) (Record, error) {
 	mutation, err := PrepareSet(scope, key, value, expected, change)
 	if err != nil {
@@ -25,7 +27,8 @@ func CompareAndSet[T any](ctx context.Context, provider Provider, scope Scope, k
 }
 
 // PrepareSet validates and encodes a typed value for a heterogeneous bulk
-// operation.
+// operation. The codec controls Data ownership and expected remains a borrowed
+// pointer; do not change either before applying the prepared mutation.
 func PrepareSet[T any](scope Scope, key Key[T], value T, expected *uint64, change Change) (Mutation, error) {
 	if err := scope.Validate(); err != nil {
 		return Mutation{}, err
@@ -104,7 +107,9 @@ func CompareAndInherit[T any](ctx context.Context, provider Provider, scope Scop
 }
 
 // Bulk applies prepared heterogeneous mutations with an explicit atomicity
-// requirement.
+// requirement. It validates all mutations before delegating but does not create
+// its own transaction, retry or copy input payloads. AllowNonAtomic permits
+// provider-specific partial commits; inspect both results and error.
 func Bulk(ctx context.Context, provider Provider, mutations []Mutation, atomicity Atomicity) ([]Record, error) {
 	if atomicity == RequireAtomic && !provider.Capabilities().AtomicBulk {
 		return nil, fmt.Errorf("%w: atomic bulk", ErrUnsupported)

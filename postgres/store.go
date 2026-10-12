@@ -1,4 +1,7 @@
-// Package postgres provides the durable PostgreSQL settings provider.
+// Package postgres provides pgx-backed durable values, history and migration
+// checkpoints. Construct New with a borrowed DB and run Migrate through the
+// deployment schema owner before traffic. It uses transactions but adds no retry,
+// connection close, authorization or encryption; it introduces pgx dependencies.
 package postgres
 
 import (
@@ -18,9 +21,13 @@ var schema string
 
 // DB is implemented by pgxpool.Pool and permits transaction-scoped tests.
 type DB interface {
+	// Exec executes parameterized SQL with caller-owned connection lifetime.
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	// Query returns rows owned by the caller, which must close them and check Rows.Err.
 	Query(context.Context, string, ...any) (pgx.Rows, error)
+	// QueryRow returns a row whose error is observed through Scan.
 	QueryRow(context.Context, string, ...any) pgx.Row
+	// BeginTx opens a transaction honoring the selected isolation/options and context.
 	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
 }
 
@@ -30,10 +37,14 @@ type querier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-// Store persists settings and audit history in one PostgreSQL transaction.
+// Store persists each write batch and audit history in one serializable
+// transaction. Concurrent use depends on its borrowed DB, normally pgxpool.Pool.
+// It owns no pool close or goroutine lifecycle; zero Store is not usable.
 type Store struct{ db DB }
 
-// New constructs a PostgreSQL provider. Call Migrate before serving traffic.
+// New borrows a nonnil concurrency-safe DB without opening or closing it.
+// Call Migrate through deployment coordination before serving traffic; nil DB
+// is not validated at construction and panics when used.
 func New(db DB) *Store { return &Store{db: db} }
 
 // Schema returns the idempotent schema owned by this package.
@@ -48,12 +59,15 @@ func (store *Store) Migrate(ctx context.Context) error {
 	return nil
 }
 
+// Capabilities advertises CAS, atomic bulk, audit history and repeatable-read snapshots; no
+// subscriptions.
 func (*Store) Capabilities() settings.Capabilities {
 	return settings.Capabilities{
 		CompareAndSet: true, AtomicBulk: true, History: true, Snapshots: true,
 	}
 }
 
+// Get reads one owner/key; missing tombstones are hidden. Context and driver failures propagate.
 func (store *Store) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
 	record, present, _, err := get(ctx, store.db, scope, key, false, false)
 	return record, present, err
@@ -89,6 +103,8 @@ WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3`
 	return record, true, sensitive, nil
 }
 
+// BulkGet reads the Cartesian product in one read-only repeatable-read transaction, including
+// version tombstones. Caller sizes must remain bounded; this method imposes no coordinate cap.
 func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys []string) ([]settings.Record, error) {
 	tx, err := store.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -113,6 +129,7 @@ func (store *Store) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	return records, nil
 }
 
+// Apply executes one value/history transaction through BulkApply.
 func (store *Store) Apply(ctx context.Context, mutation settings.Mutation) (settings.Record, error) {
 	records, err := store.BulkApply(ctx, []settings.Mutation{mutation})
 	if err != nil {
@@ -121,6 +138,9 @@ func (store *Store) Apply(ctx context.Context, mutation settings.Mutation) (sett
 	return records[0], nil
 }
 
+// BulkApply writes 1–1000 unique coordinates and their audit events in one serializable
+// transaction, returning input order. Serialization/commit failures propagate without
+// automatic retry; a commit transport error may have an uncertain outcome.
 func (store *Store) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
 	if len(mutations) == 0 {
 		return nil, fmt.Errorf("%w: bulk size", settings.ErrInvalidMutation)
@@ -178,6 +198,8 @@ WHERE scope_kind = $1 AND scope_id = $2 AND key_id = $3 FOR UPDATE`,
 			return settings.Record{}, fmt.Errorf("settings postgres read version: %w", err)
 		}
 	}
+	// Inherit hides the row from ordinary Get but keeps its version and sticky
+	// sensitivity. Those fields must survive absent overrides and later writers.
 	effectiveSensitive := storedSensitive || mutation.Sensitive
 	if mutation.ExpectedVersion != nil && currentVersion != *mutation.ExpectedVersion {
 		return settings.Record{}, fmt.Errorf("%w: %s at %s", settings.ErrConflict, mutation.Key, mutation.Scope)
@@ -245,6 +267,9 @@ func auditValue(record settings.Record, present, sensitive bool) settings.AuditV
 	return value
 }
 
+// History returns 1–1000 events in descending history-row insertion identity, optionally
+// filtering one key. Rows are closed on all paths and scan/iteration failures discard partial
+// results.
 func (store *Store) History(ctx context.Context, query settings.HistoryQuery) ([]settings.ChangeRecord, error) {
 	if err := query.Scope.Validate(); err != nil {
 		return nil, err

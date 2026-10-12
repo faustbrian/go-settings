@@ -7,6 +7,8 @@ import (
 	settings "github.com/faustbrian/go-settings/v3"
 )
 
+// xorCipher is a reversible non-authenticating test double for delegation only;
+// it is deliberately unsuitable for production encryption.
 type xorCipher struct{ key byte }
 
 func (xorCipher) ID() string { return "test-xor" }

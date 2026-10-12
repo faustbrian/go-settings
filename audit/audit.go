@@ -1,4 +1,6 @@
-// Package audit provides safe change-history reading contracts.
+// Package audit rechecks registry identity and sensitivity when reading history.
+// Use Read with a caller-owned Reader and Registry. It does not supply retention,
+// storage authentication, historical codec decoding or connection lifecycle.
 package audit
 
 import (
@@ -10,11 +12,15 @@ import (
 
 // Reader is the history-only provider capability.
 type Reader interface {
+	// History returns bounded history without transferring ownership of internal provider buffers.
 	History(context.Context, settings.HistoryQuery) ([]settings.ChangeRecord, error)
 }
 
 // Read validates definitions and enforces sensitive-value redaction again at
-// the public audit boundary, even when a provider returns unsafe bytes.
+// the public audit boundary, even when a provider returns unsafe bytes. Unknown
+// keys or mismatched codec IDs reject the whole result; codec versions are not
+// decoded/compared here. Returned data is copied or redacted. Actor/reason and
+// provider error text are not sanitized; never put values in those fields.
 func Read(ctx context.Context, reader Reader, registry *settings.Registry, query settings.HistoryQuery) ([]settings.ChangeRecord, error) {
 	records, err := reader.History(ctx, query)
 	if err != nil {

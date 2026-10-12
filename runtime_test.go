@@ -621,6 +621,8 @@ type sequencedFleetProvider struct {
 	applied   chan struct{}
 }
 
+// preReadBlockingProvider pauses before reading, unlike the stale-capture double,
+// so the joined write can prove an in-flight capture already includes its commit.
 type preReadBlockingProvider struct {
 	settings.Provider
 	mu        sync.Mutex

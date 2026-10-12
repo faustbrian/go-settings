@@ -1,5 +1,8 @@
 // Package migration provides resumable, idempotent setting-definition
-// evolution for renames, codec transformations, and default changes.
+// evolution for renames, codec transformations, and default changes. Use Run
+// with caller-owned Provider/Journal and explicit scopes. Values and checkpoint
+// writes are separate; a failed checkpoint can follow a committed value change.
+// It owns neither connection lifecycle nor global migration serialization.
 package migration
 
 import (
@@ -15,12 +18,17 @@ import (
 type Kind string
 
 const (
-	KindRename        Kind = "rename"
-	KindTransform     Kind = "transform"
+	// KindRename moves one stable key to another with atomic writes.
+	KindRename Kind = "rename"
+	// KindTransform changes the codec contract at the same stable key.
+	KindTransform Kind = "transform"
+	// KindDefaultChange checkpoints a definition-only default change without rewriting values.
 	KindDefaultChange Kind = "default-change"
 )
 
-// Step is an immutable, self-identifying migration operation.
+// Step identifies an operation. Constructors copy default bytes but borrow
+// definitions and transform callbacks, which must remain immutable and safe for
+// the caller's execution concurrency. A zero Step is invalid in a Plan.
 type Step struct {
 	id         string
 	kind       Kind
@@ -31,18 +39,22 @@ type Step struct {
 	newDefault []byte
 }
 
-// Rename moves persisted owner values between stable identifiers atomically.
+// Rename constructs a step to move persisted owner values atomically when Run
+// executes it; construction performs no IO and borrows both definitions.
 func Rename(id string, from, to settings.Definition) Step {
 	return Step{id: id, kind: KindRename, from: from, to: to}
 }
 
 // Transform upgrades persisted bytes and codec metadata in place. The target
-// definition's codec contract is the idempotency marker.
+// definition's codec contract is the idempotency marker. The callback receives
+// provider-returned bytes synchronously, may return borrowed bytes used during
+// Apply, and must not panic or expose values in errors. It is not context-aware.
 func Transform(id string, from, to settings.Definition, transform func([]byte) ([]byte, error)) Step {
 	return Step{id: id, kind: KindTransform, from: from, to: to, transform: transform}
 }
 
-// ChangeDefault records an interpretable definition-only default transition.
+// ChangeDefault constructs a definition-only default transition with copied
+// old/new encoded bytes. Run validates and checkpoints it without changing defaults.
 func ChangeDefault(id string, definition settings.Definition, oldValue, newValue []byte) Step {
 	return Step{
 		id: id, kind: KindDefaultChange, to: definition,
@@ -58,26 +70,39 @@ func (step Step) Kind() Kind { return step.kind }
 
 // Plan is a schema transition with stable provenance.
 type Plan struct {
-	ID         string
+	// ID is the stable journal plan identity; callers must not reuse it for a different plan.
+	ID string
+	// FromSchema labels the previous application schema; Run does not alter provider schemas.
 	FromSchema string
-	ToSchema   string
-	Steps      []Step
+	// ToSchema labels the distinct destination application schema.
+	ToSchema string
+	// Steps are ordered borrowed operations; do not mutate them during Run.
+	Steps []Step
 }
 
 // Journal persists completion checkpoints independently of value versions.
 type Journal interface {
+	// Completed checks a stable plan/step/owner checkpoint independently of value versions.
 	Completed(context.Context, string, string, settings.Scope) (bool, error)
+	// MarkCompleted durably and idempotently records a checkpoint after its value operation;
+	// failure may follow a committed write.
 	MarkCompleted(context.Context, string, string, settings.Scope, time.Time) error
 }
 
 // Report summarizes one resumable execution.
 type Report struct {
+	// Completed counts successfully applied and checkpointed steps in this invocation.
 	Completed int
-	Skipped   int
+	// Skipped counts checkpoints already present before each step.
+	Skipped int
 }
 
 // Run executes a plan for explicit owners. Steps remain idempotent even when
-// the write commits immediately before a checkpoint failure.
+// the write commits immediately before a checkpoint failure. Returns partial
+// counts on error; it does not roll back earlier owners/steps or retry conflicts.
+// Callers must serialize competing plan runners and preserve immutable plan IDs,
+// steps and collaborators. Default-change steps only validate and checkpoint;
+// they do not replace application definitions or registry defaults.
 func Run(ctx context.Context, provider settings.Provider, journal Journal, plan Plan, scopes []settings.Scope, change settings.Change) (Report, error) {
 	if err := validatePlan(plan, scopes); err != nil {
 		return Report{}, err
@@ -251,7 +276,9 @@ func applyTransform(ctx context.Context, provider settings.Provider, scope setti
 	return err
 }
 
-// MemoryJournal is a deterministic concurrent checkpoint journal for tests.
+// MemoryJournal is a concurrent non-durable checkpoint journal for tests.
+// Construct it with NewMemoryJournal; zero supports reads but cannot write.
+// Contexts are ignored and checkpoint timestamps have no expiry.
 type MemoryJournal struct {
 	mu        sync.RWMutex
 	completed map[string]time.Time
@@ -266,6 +293,7 @@ func journalKey(plan, step string, scope settings.Scope) string {
 	return plan + "\x00" + step + "\x00" + scope.String()
 }
 
+// Completed reads an in-memory checkpoint; this test journal ignores context cancellation.
 func (journal *MemoryJournal) Completed(_ context.Context, plan, step string, scope settings.Scope) (bool, error) {
 	journal.mu.RLock()
 	defer journal.mu.RUnlock()
@@ -273,6 +301,8 @@ func (journal *MemoryJournal) Completed(_ context.Context, plan, step string, sc
 	return ok, nil
 }
 
+// MarkCompleted records or replaces the checkpoint time under a lock; this test journal
+// ignores context cancellation.
 func (journal *MemoryJournal) MarkCompleted(_ context.Context, plan, step string, scope settings.Scope, at time.Time) error {
 	journal.mu.Lock()
 	defer journal.mu.Unlock()

@@ -9,22 +9,37 @@ import (
 type ScopeKind string
 
 const (
-	ScopeGlobal   ScopeKind = "global"
-	ScopeTenant   ScopeKind = "tenant"
-	ScopeUser     ScopeKind = "user"
+	// ScopeGlobal identifies the single owner with no ID.
+	ScopeGlobal ScopeKind = "global"
+	// ScopeTenant identifies an application-defined tenant.
+	ScopeTenant ScopeKind = "tenant"
+	// ScopeUser identifies an application-defined user.
+	ScopeUser ScopeKind = "user"
+	// ScopeResource identifies an application-defined resource.
 	ScopeResource ScopeKind = "resource"
 )
 
 // Scope identifies one isolated owner of persisted settings.
 type Scope struct {
+	// Kind selects global, tenant, user or resource ownership.
 	Kind ScopeKind `json:"kind"`
-	ID   string    `json:"id,omitempty"`
+	// ID is empty for global and a nonempty identifier of at most 255 bytes otherwise.
+	ID string `json:"id,omitempty"`
 }
 
-func Global() Scope            { return Scope{Kind: ScopeGlobal} }
-func Tenant(id string) Scope   { return Scope{Kind: ScopeTenant, ID: id} }
-func User(id string) Scope     { return Scope{Kind: ScopeUser, ID: id} }
+// Global returns the global scope with no identifier.
+func Global() Scope { return Scope{Kind: ScopeGlobal} }
+
+// Tenant returns a tenant scope; Validate must reject invalid identifiers before persistence.
+func Tenant(id string) Scope { return Scope{Kind: ScopeTenant, ID: id} }
+
+// User returns a user scope; it does not authenticate the user.
+func User(id string) Scope { return Scope{Kind: ScopeUser, ID: id} }
+
+// Resource returns a resource scope; it does not authorize access.
 func Resource(id string) Scope { return Scope{Kind: ScopeResource, ID: id} }
+
+// String renders kind:id, or global without an ID; it does not validate the scope.
 func (scope Scope) String() string {
 	if scope.Kind == ScopeGlobal {
 		return string(scope.Kind)
@@ -50,10 +65,12 @@ func (scope Scope) Validate() error {
 	return nil
 }
 
-// ResolutionChain declares precedence from highest to lowest priority.
+// ResolutionChain declares precedence from highest to lowest priority. Its
+// zero value is invalid for resolution; no global owner is implicitly appended.
 type ResolutionChain struct{ scopes []Scope }
 
-// Chain constructs an explicit precedence chain.
+// Chain copies an explicit precedence chain without validating it; resolution
+// rejects empty chains, duplicate owners and invalid scopes.
 func Chain(scopes ...Scope) ResolutionChain {
 	return ResolutionChain{scopes: append([]Scope(nil), scopes...)}
 }

@@ -1,4 +1,7 @@
-// Package settingstest provides a reusable provider conformance suite.
+// Package settingstest supplies a selected provider contract suite for tests.
+// RunProvider checks CAS, atomic bulk, audit metadata, sticky sensitivity, scope
+// validation and pre-canceled Get. This is not exhaustive provider, service,
+// race, crash-recovery or performance qualification. Factory owns test cleanup.
 package settingstest
 
 import (
@@ -9,10 +12,11 @@ import (
 	settings "github.com/faustbrian/go-settings/v3"
 )
 
-// Factory returns an isolated provider for one conformance test.
+// Factory returns a nonnil isolated provider for each subtest, with CAS,
+// atomic bulk and history support. It owns resources through t.Cleanup.
 type Factory func(*testing.T) settings.Provider
 
-// RunProvider verifies the behavior shared by every durable provider.
+// RunProvider executes the selected six contract subtests using fresh factories.
 func RunProvider(t *testing.T, factory Factory) {
 	t.Helper()
 

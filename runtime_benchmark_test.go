@@ -8,6 +8,8 @@ import (
 	"github.com/faustbrian/go-settings/v3/memory"
 )
 
+// BenchmarkRuntimeHotRead measures ResolveCurrent on one seeded/fresh runtime, including typed
+// validation and freshness work; seeding/initial refresh are excluded.
 func BenchmarkRuntimeHotRead(b *testing.B) {
 	key := settings.NewKey("benchmark", "runtime-hot-read", settings.StringCodec{})
 	durable := memory.New()
@@ -30,6 +32,8 @@ func BenchmarkRuntimeHotRead(b *testing.B) {
 	}
 }
 
+// BenchmarkRuntimeRefresh100 measures complete memory-backed capture of 100 seeded
+// definitions; construction/seeding are excluded, provider capture and validation included.
 func BenchmarkRuntimeRefresh100(b *testing.B) {
 	durable := memory.New()
 	definitions := make([]settings.Definition, 100)

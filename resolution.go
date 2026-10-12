@@ -9,31 +9,51 @@ import (
 type Status uint8
 
 const (
+	// StatusMissing means no stored winner or declared default exists.
 	StatusMissing Status = iota
+	// StatusStored means the highest-priority owner supplied a value.
 	StatusStored
+	// StatusInherited means a later owner supplied the value.
 	StatusInherited
+	// StatusDefaulted means all visited owners were missing and a definition default was used.
 	StatusDefaulted
+	// StatusCleared means an explicit clear stopped resolution.
 	StatusCleared
+	// StatusInvalid means chain, provider, codec or validation failed; inspect the accompanying error.
 	StatusInvalid
 )
 
 // PathStep records one owner visited during deterministic resolution.
 type PathStep struct {
-	Scope   Scope
-	State   State
+	// Scope is the owner visited at this step.
+	Scope Scope
+	// State records missing, stored or cleared state at this owner.
+	State State
+	// Version is the selected or visited record version; zero for a missing/default outcome.
 	Version uint64
 }
 
 // Result is a typed effective value and its full provenance.
 type Result[T any] struct {
-	Value   T
-	Status  Status
-	Owner   Scope
+	// Value is meaningful for stored, inherited or defaulted results; reference-bearing T may
+	// alias a default or codec output.
+	Value T
+	// Status identifies the resolution outcome.
+	Status Status
+	// Owner is the winning persisted owner, or zero when no persisted owner wins.
+	Owner Scope
+	// Version is the selected or visited record version; zero for a missing/default outcome.
 	Version uint64
-	Path    []PathStep
+	// Path contains visited owners in precedence order; errors may return only a prefix.
+	Path []PathStep
 }
 
-// Resolve evaluates a typed key against a caller-declared precedence chain.
+// Resolve evaluates the explicit chain in order, stopping at a clear, a value
+// or an error. It performs separate provider reads, not an atomic snapshot.
+// Provider/decode/validation failures return StatusInvalid and a partial Path;
+// invalid stored data never falls through to defaults. Construct a valid key
+// and supply nonnil provider/context; callbacks are synchronous and uncontained.
+// Default values are borrowed and returned without deep copying or revalidation.
 func Resolve[T any](ctx context.Context, provider Provider, key Key[T], chain ResolutionChain) (Result[T], error) {
 	if err := chain.validate(); err != nil {
 		return Result[T]{Status: StatusInvalid}, err

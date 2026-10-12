@@ -78,6 +78,8 @@ tests, installation, private-cache sessions and explicit release rehearsal.
 
 ## Documentation
 
+- [Source contract audit](docs/source-documentation-audit.md)
+
 - [Quick start](docs/quick-start.md)
 - [API reference](docs/api.md)
 - [Scopes and precedence](docs/scopes-and-precedence.md)

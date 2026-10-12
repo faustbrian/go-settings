@@ -1,5 +1,9 @@
 // Package valkey provides an optional cache and invalidation layer in front of
-// a durable settings provider. It is never durable by default.
+// a durable settings provider. It is never durable by default. Use New with a
+// borrowed durable source and Transport; NewNativeTransport introduces valkey-go
+// dependencies. Callers own client close, credentials, transport cancellation,
+// tenant admission and value encryption. Pub/sub hints do not themselves evict
+// this Cache's entries or provide delivery/cluster freshness guarantees.
 package valkey
 
 import (
@@ -18,19 +22,28 @@ import (
 
 // Transport is the small Valkey contract needed by Cache.
 type Transport interface {
+	// Get returns cached bytes and presence; implementations must support concurrent
+	// context-aware use.
 	Get(context.Context, string) ([]byte, bool, error)
+	// SetIfNewer atomically stores bytes with TTL only when the supplied version is newer than
+	// retained state.
 	SetIfNewer(context.Context, string, []byte, time.Duration, uint64) error
+	// Delete removes one cached key.
 	Delete(context.Context, string) error
+	// Publish sends a lossy invalidation, not a durable delivery acknowledgement.
 	Publish(context.Context, string, []byte) error
+	// Subscribe opens a context-owned subscription; implementations close both channels when it ends.
 	Subscribe(context.Context, string) (<-chan []byte, <-chan error)
 }
 
-// ReadPolicy defines whether reads may be served from an invalidation-driven
+// ReadPolicy defines whether reads may be served from a TTL-based
 // cache or must always consult durable storage.
 type ReadPolicy uint8
 
 const (
+	// Strong consults durable storage on every read.
 	Strong ReadPolicy = iota + 1
+	// BoundedStale allows a validated cached record until transport TTL expiry.
 	BoundedStale
 )
 
@@ -38,15 +51,24 @@ const (
 type OutagePolicy uint8
 
 const (
+	// Bypass suppresses cache failures and uses durable storage.
 	Bypass OutagePolicy = iota
+	// FailClosed returns cache failures, including failures after a durable commit.
 	FailClosed
 )
 
 // Config makes consistency and outage behavior explicit.
 type Config struct {
-	Prefix       string
-	TTL          time.Duration
-	ReadPolicy   ReadPolicy
+	// Prefix is a deployment-unique namespace, 1–255 bytes without controls; naming is not
+	// access control.
+	Prefix string
+	// TTL defaults to one minute when nonpositive; it bounds cache entry residence, not a
+	// cluster freshness SLA.
+	TTL time.Duration
+	// ReadPolicy defaults to BoundedStale when zero; other non-BoundedStale values consult
+	// durable storage.
+	ReadPolicy ReadPolicy
+	// OutagePolicy defaults to Bypass; only FailClosed propagates cache-side failures.
 	OutagePolicy OutagePolicy
 }
 
@@ -58,17 +80,27 @@ var errInvalidInvalidation = errors.New("invalidation payload is invalid")
 // CacheError reports a cache-side failure and whether the durable mutation
 // already committed.
 type CacheError struct {
+	// Operation names the cache failure boundary.
 	Operation string
+	// Committed is true when a durable write succeeded before cache/publish failed.
 	Committed bool
-	Err       error
+	// Err is the wrapped transport cause; transports must not expose secrets in errors.
+	Err error
 }
 
+// Error renders operation and wrapped cause, relying on transport errors to be secret-safe.
 func (err *CacheError) Error() string {
 	return fmt.Sprintf("settings valkey %s: %v", err.Operation, err.Err)
 }
+
+// Unwrap returns the underlying transport failure.
 func (err *CacheError) Unwrap() error { return err.Err }
 
-// Cache wraps a durable provider with bounded-stale reads and invalidation.
+// Cache wraps a durable provider with TTL-based reads and invalidation publishing.
+// It has no owned Close lifecycle. Concurrent use depends on its borrowed
+// durable provider and Transport. Zero Cache is not usable; Watch contexts own
+// their goroutines. Cache values may contain secret bytes even when audit
+// redaction is enabled, so deployment access control/encryption remain external.
 type Cache struct {
 	durable   settings.Provider
 	transport Transport
@@ -78,7 +110,10 @@ type Cache struct {
 }
 
 // New constructs a cache. Prefix must identify one deployment; an invalid
-// configuration makes all provider operations fail closed.
+// prefix makes IO operations fail closed. TTL <= 0 becomes one minute and zero
+// ReadPolicy becomes BoundedStale; only the prefix is validated. Non-nil durable
+// and transport collaborators are required but not checked. Other enum values
+// behave according to their branch comparison rather than being rejected.
 func New(durable settings.Provider, transport Transport, config Config) *Cache {
 	configErr := validateConfig(config)
 	if config.TTL <= 0 {
@@ -103,12 +138,17 @@ func validateConfig(config Config) error {
 	return nil
 }
 
+// Capabilities delegates durable guarantees and adds Subscriptions; configuration
+// errors are reported by IO methods rather than this metadata call.
 func (cache *Cache) Capabilities() settings.Capabilities {
 	capabilities := cache.durable.Capabilities()
 	capabilities.Subscriptions = true
 	return capabilities
 }
 
+// Get uses cached records only under BoundedStale, rejecting malformed payloads and falling
+// back to durable storage. FailClosed propagates transport/fill errors; missing durable reads
+// are not newly cached.
 func (cache *Cache) Get(ctx context.Context, scope settings.Scope, key string) (settings.Record, bool, error) {
 	if cache.configErr != nil {
 		return settings.Record{}, false, cache.configErr
@@ -161,6 +201,8 @@ func (cache *Cache) BulkGet(ctx context.Context, scopes []settings.Scope, keys [
 	return records, nil
 }
 
+// Apply writes durable state first, then caches/publishes. A committed CacheError accompanies
+// the acknowledged record under FailClosed; do not blindly retry.
 func (cache *Cache) Apply(ctx context.Context, mutation settings.Mutation) (settings.Record, error) {
 	if cache.configErr != nil {
 		return settings.Record{}, cache.configErr
@@ -175,6 +217,8 @@ func (cache *Cache) Apply(ctx context.Context, mutation settings.Mutation) (sett
 	return record, nil
 }
 
+// BulkApply writes the durable batch first, then sequentially fans out its records; a later
+// committed cache error returns the full durable result, with partial fanout.
 func (cache *Cache) BulkApply(ctx context.Context, mutations []settings.Mutation) ([]settings.Record, error) {
 	if cache.configErr != nil {
 		return nil, cache.configErr
@@ -249,6 +293,7 @@ func (cache *Cache) key(scope settings.Scope, key string) string {
 	return cache.config.Prefix + ":value:" + hex.EncodeToString(sum[:])
 }
 
+// History delegates directly to durable history after configuration admission.
 func (cache *Cache) History(ctx context.Context, query settings.HistoryQuery) ([]settings.ChangeRecord, error) {
 	if cache.configErr != nil {
 		return nil, cache.configErr
@@ -257,7 +302,11 @@ func (cache *Cache) History(ctx context.Context, query settings.HistoryQuery) ([
 }
 
 // Watch subscribes to bounded, cancellable, at-most-once invalidations. When
-// the buffer is full, the oldest queued event is replaced by the newest.
+// the buffer is full, the oldest queued event is replaced by the newest. Buffer
+// must be 1–10000; messages are bounded to 4 KiB before JSON decode, but semantic
+// hint admission is left to consumers. Decode errors are reported nonblocking;
+// transport error-channel closure or a nil error ends this watcher. Cancel the
+// nonnil context to close both returned channels; no durable replay is supplied.
 func (cache *Cache) Watch(ctx context.Context, buffer int) (<-chan Event, <-chan error, error) {
 	if cache.configErr != nil {
 		return nil, nil, cache.configErr
