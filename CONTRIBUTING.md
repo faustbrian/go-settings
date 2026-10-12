@@ -53,8 +53,8 @@ The deterministic command executes fuzz seeds/corpus, not active fuzzing.
 Provider tests skip when `POSTGRES_URL` or `VALKEY_ADDR` is absent; an
 unconfigured direct test run does not qualify durable providers or the
 PostgreSQL/Valkey fleet integration.
-Install the verified public v2.1.3 binary archive for your platform from
-[go-library-tools releases](https://github.com/faustbrian/go-library-tools/releases/tag/v2.1.3),
+Install the verified public v2.4.0 binary archive for your platform from
+[go-library-tools releases](https://github.com/faustbrian/go-library-tools/releases/tag/v2.4.0),
 checking `checksums.txt` against `.golib.yaml` and the archive against that
 checksum set. Put the extracted `golib` binary on `PATH`; do not build Tools
 from source. CI verifies the same published release while checking out its
@@ -106,3 +106,12 @@ Follow [repository structure policy](AGENTS.md#repository-structure). New module
 require an explicit purpose, ownership boundary, dependency review, package
 catalog entry, full quality gates, documentation, changelog, license, security
 policy, compatibility plan, and release dry-run.
+
+## Source Documentation
+
+Install the checksum-pinned public verifier declared in `.golib.yaml`.
+`make source-docs-check` validates objective Go comment, marker, link and
+generated-producer structure; `make check`, `make check-full` and `make ci`
+require it before their existing checks. Shared CI runs the same strict
+contract and includes its result in Required. This is structural enforcement,
+not a substitute for source-truth review or behavioral verification.

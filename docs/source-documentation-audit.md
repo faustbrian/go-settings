@@ -72,3 +72,12 @@ source. No unresolved rationale is filled with a speculative guarantee. Native
 apidiff baselines, module inputs, SQL/Lua and historical artifacts are untouched.
 This local documentation result does not qualify database behavior, fleet
 convergence, remote CI, release readiness or application migration.
+
+## Objective Enforcement
+
+The checksum-pinned public Tools v2.4.0 verifier now supplies
+`make source-docs-check` as a prerequisite of the existing local and CI Make
+routes. Ordinary shared CI selects strict source-documentation checking and
+requires its result. Native prerequisites, operation budgets, security and
+release controls are retained. Hosted exact-head evidence is recorded by the
+coordination ledger; configuration alone does not establish green delivery.
