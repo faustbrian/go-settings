@@ -1,5 +1,7 @@
 # Adoption guide
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 1. Exclude boot configuration, feature rollouts, permissions, and rules.
 2. Assign stable namespaces, key IDs, and codec versions.
 3. Define validation, docs, defaults, display labels, and sensitivity.
@@ -10,3 +12,6 @@
 8. Add Valkey only after choosing staleness and outage policy.
 9. Capture request/job snapshots where repeated reads must agree.
 10. Retire legacy storage after rollback and recovery drills.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

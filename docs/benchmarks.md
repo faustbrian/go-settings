@@ -1,5 +1,7 @@
 # Benchmark baseline
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Go 1.26.5, macOS arm64, Apple M4 Max. Each row is the median of five samples,
 each measured with exactly 100 operations using `-benchmem -benchtime=100x -count=5`.
 Allocation columns use the median when the samples differ. Compare
@@ -16,3 +18,6 @@ a regression signal, not a capacity forecast.
 | BulkRead100 | 4,240 | 15,136 | 101 |
 | ProviderContention | 895 | 894 | 6 |
 | CacheInvalidation | 3,841 | 2,378 | 27 |
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

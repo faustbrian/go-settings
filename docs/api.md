@@ -1,5 +1,7 @@
 # API reference
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The published signature reference is
 `go doc github.com/faustbrian/go-settings/v2` for released v2.0.0.
 The current source prepares unpublished `github.com/faustbrian/go-settings/v3`;
@@ -43,3 +45,6 @@ history. `Export` and `Import` use a versioned schema-aware document.
 Packages: `memory` is deterministic; `postgres` is durable; `valkey` caches and
 invalidates; `migration` evolves definitions; `audit` reads history safely;
 and `settingstest` supplies third-party provider conformance.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

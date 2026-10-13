@@ -1,5 +1,7 @@
 # Runtime fleet resilience
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
 "OPTIONAL" in this document are to be interpreted as described in BCP 14
@@ -201,3 +203,6 @@ mutation artifacts.
 
 [RFC2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC8174]: https://www.rfc-editor.org/rfc/rfc8174
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

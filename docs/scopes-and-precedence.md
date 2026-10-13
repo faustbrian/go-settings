@@ -1,5 +1,7 @@
 # Scopes and precedence
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Chains are ordered highest to lowest. There is no implicit global fallback.
 
 ```go
@@ -13,3 +15,6 @@ chain := settings.Chain(
 an override and resumes fallback. No record yields a declared default or
 `StatusMissing`; malformed bytes yield `StatusInvalid` without exposing data.
 Duplicate owners and empty chains are rejected. Scope identifiers are bounded.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

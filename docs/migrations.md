@@ -1,5 +1,7 @@
 # Migrations
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 A `Plan` has stable source/target schema IDs and ordered rename, transform, or
 default-change steps. Execute it for explicit scopes with actor and reason.
 Renames require atomic bulk writes. Transforms use the target codec contract as
@@ -89,3 +91,6 @@ sensitive coordinate, v1 writers and ordinary rollback are unsafe because v1
 does not preserve the sensitivity marker and can expose plaintext audit data.
 Rollback then requires either restoring pre-v2 data under stopped traffic or a
 reviewed v1 backport that enforces the marker before writes resume.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

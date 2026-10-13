@@ -1,5 +1,7 @@
 # FAQ
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 **Why not environment variables?** They are boot configuration and lack owner
 precedence, runtime changes, optimistic versions, and application audit.
 
@@ -16,3 +18,6 @@ staleness is unacceptable. Always reconcile from durable storage.
 
 **Can it store secrets?** Yes with caller-owned encryption and normal database
 controls, but the package does not manage keys.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

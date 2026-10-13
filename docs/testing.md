@@ -1,5 +1,7 @@
 # Testing and local commands
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 `make check` and `make ci` use the public tool pinned in `.golib.yaml` for
 bounded checks: format/module validation, deterministic tests/seeds, vet,
 configured static/security checks, documentation links, API compatibility and
@@ -34,3 +36,6 @@ Scheduled CI uses the shared bounded route, not an automatic full campaign.
 online authority and full release rehearsal explicitly. See
 [contributor verification](../CONTRIBUTING.md#verification) for standalone
 tests, installation and disposable-cache sessions.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

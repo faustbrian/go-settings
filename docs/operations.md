@@ -1,5 +1,7 @@
 # Operations
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Monitor durable latency, conflicts, audit transaction failures, cache errors,
 subscriber disconnects, and migration checkpoints. Never label metrics with
 owners or values. On PostgreSQL outage, operations fail; cached reads are not
@@ -15,3 +17,6 @@ drain `Runtime.Shutdown` inside the SIGTERM grace period. Track refresh and
 convergence windows without value or owner labels. The complete startup,
 failover, rollout, and shutdown contract is in
 [fleet resilience](fleet-resilience.md).
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

@@ -1,5 +1,7 @@
 # Quick start
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Define keys once, register them during application assembly, and inject a
 provider into request or job code. Never place precedence in mutable globals.
 
@@ -24,3 +26,6 @@ Capture a snapshot at a request or job boundary when repeated reads must agree:
 snapshot, err := settings.Capture(ctx, provider, chain, dueDays)
 effective, err := settings.ResolveSnapshot(snapshot, dueDays, chain)
 ```
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

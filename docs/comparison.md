@@ -1,5 +1,7 @@
 # Comparison
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 | Concern | Configuration | Settings | Feature flags |
 | --- | --- | --- | --- |
 | Lifecycle | Process boot | Runtime application data | Runtime rollout |
@@ -11,3 +13,6 @@
 Use `config` for process connections, `settings` for persisted
 preferences, a feature-flag system for rollout, policy code for authorization,
 and domain code for business rules.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

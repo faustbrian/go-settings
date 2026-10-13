@@ -1,5 +1,7 @@
 # Caching semantics
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 `BoundedStale` reads validated Valkey entries first until transport TTL expiry.
 This is not a cluster freshness SLA: a delayed fill can cache an older durable
 read, and `Cache.Watch` supplies hints rather than automatically evicting entries.
@@ -23,3 +25,6 @@ before JSON decoding. Runtime stale-event decisions use only its immutable
 last-known-good snapshot and retain no attacker-controlled event identities;
 future, unknown, or malformed hints trigger debounced durable reconciliation.
 See [fleet resilience](fleet-resilience.md).
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

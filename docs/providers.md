@@ -1,5 +1,7 @@
 # Providers
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 `memory.New()` is deterministic, atomic, concurrent, and intended for tests or
 single-process local use. It is not durable.
 
@@ -28,3 +30,6 @@ Callers retain and close provider connections, PostgreSQL pools, Valkey clients,
 transports, snapshot stores, and invalidation sources. `Runtime.Shutdown`
 cancels and drains the package-owned timers and goroutines; it does not close
 those caller-owned collaborators.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.
