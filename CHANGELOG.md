@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Build with Go 1.27.3 to address GO-2026-6809 in `crypto/x509`.
+  Consumers should use Go 1.27.3 or newer.
+
 ## [Unreleased] - root v3.0.0
 
 The current source prepares unpublished `/v3` because pgx 5.11 expands the
